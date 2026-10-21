@@ -2,7 +2,7 @@
 // Postgres in the ticket that builds the matching DAL module. Covered so far: profiles,
 // roles and notifications (tests/server/auth.test.ts, profiles-notifications.test.ts) and
 // scent ownership and sharing (tests/server/scents.test.ts, library.test.ts), and order
-// access and redaction (tests/server/checkout.test.ts).
+// access and redaction (tests/server/checkout.test.ts), and products (products.test.ts).
 import { describe, it } from "vitest";
 
 describe("authorization rules", () => {
@@ -21,9 +21,8 @@ describe("authorization rules", () => {
     it.todo("admins can transition all orders");
   });
 
-  describe("catalog (T6, T9)", () => {
-    it.todo("the public can read only active ingredients, bottle options, products and variants");
-    it.todo("only admins can write catalog data");
+  describe("catalog (T9)", () => {
+    it.todo("only admins can write ingredients and bottle options");
   });
 
   describe("system data (T5, T9, T11)", () => {
