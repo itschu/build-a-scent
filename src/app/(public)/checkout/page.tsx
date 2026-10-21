@@ -20,7 +20,9 @@ export default function CheckoutPage() {
 }
 
 async function Checkout() {
-  const [actor, zones, settings] = await Promise.all([getActor(), getCachedShippingZones(), getCachedPublicSettings()]);
+  // The session read comes first so cached database reads never run during `next build`.
+  const actor = await getActor();
+  const [zones, settings] = await Promise.all([getCachedShippingZones(), getCachedPublicSettings()]);
   let prefill: CheckoutPrefill = {};
   if (actor.kind === "user") {
     const p = await getOwnProfile(actor);

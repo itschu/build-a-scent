@@ -54,6 +54,10 @@ scripts/            migration, seed and admin CLI scripts
 tests/              database and server tests
 ```
 
+`pnpm build` never touches the database (Railway build containers can't reach it): pages
+read request data (`searchParams`, `params`, cookies) before any cached query, so nothing from
+the database is prerendered. Check with `DATABASE_URL=postgres://x@127.0.0.1:1/x pnpm build`.
+
 All database access goes through `src/server`. The browser never talks to Postgres, and
 each data access function enforces the authorization rules in the Tech Plan.
 

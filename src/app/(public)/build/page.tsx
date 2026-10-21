@@ -26,7 +26,9 @@ export default function BuildPage({ searchParams }: PageProps<"/build">) {
 type Initial = { snapshot?: Partial<MixerSnapshot>; notice?: string };
 
 async function MixerLoader({ searchParams }: { searchParams: PageProps<"/build">["searchParams"] }) {
-  const [catalog, params] = await Promise.all([getMixerCatalog(), searchParams]);
+  // Request data first: cached database reads must never run during `next build`.
+  const params = await searchParams;
+  const catalog = await getMixerCatalog();
   const draftId = typeof params.draft === "string" ? params.draft : null;
   const fromId = typeof params.from === "string" ? params.from : null;
   const shareToken = typeof params.share === "string" ? params.share : null;
