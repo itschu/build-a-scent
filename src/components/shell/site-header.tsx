@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useSession } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
@@ -15,7 +15,39 @@ const PRIMARY_LINKS = [
   { href: "/marketplace", label: "Marketplace" },
 ];
 
+/**
+ * The interactive header reads the pathname, which on dynamic routes is request data, so it
+ * renders behind Suspense with a static frame (same layout, no active state) as fallback.
+ */
 export function SiteHeader() {
+  return (
+    <Suspense fallback={<StaticHeader />}>
+      <InteractiveHeader />
+    </Suspense>
+  );
+}
+
+function StaticHeader() {
+  return (
+    <header className="sticky top-0 z-30 border-b border-line bg-ink/95 backdrop-blur">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-6 px-4 sm:px-8">
+        <Link href="/" className="font-serif text-sm tracking-display text-gold">
+          BUILD A SCENT
+        </Link>
+        <nav aria-label="Main" className="hidden items-center gap-8 md:flex">
+          {PRIMARY_LINKS.map((l) => (
+            <Link key={l.href} href={l.href} className="font-serif text-[0.75rem] uppercase tracking-label text-muted">
+              {l.label}
+            </Link>
+          ))}
+        </nav>
+        <span className="w-24" aria-hidden />
+      </div>
+    </header>
+  );
+}
+
+function InteractiveHeader() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
