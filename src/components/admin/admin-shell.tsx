@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import type { AdminBadges } from "./admin-nav";
 import { AdminSidebar } from "./admin-sidebar";
@@ -17,7 +17,9 @@ export function AdminShell({ children, badges }: { children: ReactNode; badges?:
           </Link>
         </div>
         <div className="py-2 md:py-4">
-          <AdminSidebar badges={badges} />
+          <Suspense>
+            <AdminSidebar badges={badges} />
+          </Suspense>
         </div>
         <div className="hidden space-y-3 border-t border-line px-5 py-5 md:block">
           <Link href="/" className="block text-xs text-muted hover:text-gold">
