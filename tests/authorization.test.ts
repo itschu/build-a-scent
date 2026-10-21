@@ -3,7 +3,8 @@
 // roles and notifications (tests/server/auth.test.ts, profiles-notifications.test.ts) and
 // scent ownership and sharing (tests/server/scents.test.ts, library.test.ts), and order
 // access and redaction (tests/server/checkout.test.ts), products (products.test.ts) and
-// marketplace listings and moderation (marketplace.test.ts, moderation.test.ts).
+// marketplace listings and moderation (marketplace.test.ts, moderation.test.ts), and admin
+// catalog, orders, analytics and settings (admin.test.ts).
 import { describe, it } from "vitest";
 
 describe("authorization rules", () => {
@@ -12,15 +13,9 @@ describe("authorization rules", () => {
   });
 
   describe("marketplace_listings (T7, T8)", () => {
-    it.todo("only the system can move a listing to or from unavailable");
   });
 
   describe("orders and order_items (T5)", () => {
-    it.todo("admins can transition all orders");
-  });
-
-  describe("catalog (T9)", () => {
-    it.todo("only admins can write ingredients and bottle options");
   });
 
   describe("system data (T5, T9, T11)", () => {

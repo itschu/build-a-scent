@@ -20,6 +20,9 @@ type TemplateMap = {
   verify_email: { name: string; url: string };
   reset_password: { name: string; url: string };
   test_email: { sentBy: string };
+  order_shipped: { name: string; orderNumber: string; eta: string | null; lookupUrl: string };
+  order_delivered: { name: string; orderNumber: string; lookupUrl: string };
+  order_refunded: { name: string; orderNumber: string; totalKobo: number; reason: string; lookupUrl: string };
   listing_approved: { name: string; scentName: string; url: string };
   listing_rejected: { name: string; scentName: string; reason: string; url: string };
   listing_unavailable: { name: string; scentName: string; reason: string; url: string };
@@ -87,6 +90,37 @@ const templates: { [T in EmailTemplate]: (p: TemplateMap[T]) => RenderedEmail } 
         paragraph("Use the button below to choose a new password. The link is valid for 1 hour.") +
         button("RESET PASSWORD", url) +
         paragraph("If you didn't ask for this, you can ignore this email."),
+    ),
+  }),
+  order_shipped: ({ name, orderNumber, eta, lookupUrl }) => ({
+    subject: `Order ${orderNumber} is on its way`,
+    text: `Hi ${name},\n\nYour order ${orderNumber} has shipped.${eta ? ` Estimated delivery: ${eta}.` : ""}\n\nTrack it: ${lookupUrl}`,
+    html: layout(
+      "Your order is on its way",
+      paragraph(`Hi ${name},`) +
+        paragraph(`Your order ${orderNumber} has been blended, bottled and shipped.`) +
+        (eta ? paragraph(`Estimated delivery: ${eta}`) : "") +
+        button("TRACK YOUR ORDER", lookupUrl),
+    ),
+  }),
+  order_delivered: ({ name, orderNumber, lookupUrl }) => ({
+    subject: `Order ${orderNumber} has been delivered`,
+    text: `Hi ${name},\n\nYour order ${orderNumber} has been delivered. Enjoy your scent!\n\n${lookupUrl}`,
+    html: layout(
+      "Delivered",
+      paragraph(`Hi ${name},`) + paragraph(`Your order ${orderNumber} has been delivered. We hope you love it.`) + button("VIEW ORDER", lookupUrl),
+    ),
+  }),
+  order_refunded: ({ name, orderNumber, totalKobo, reason, lookupUrl }) => ({
+    subject: `Refund for order ${orderNumber}`,
+    text: `Hi ${name},\n\nWe've refunded ${formatNaira(totalKobo)} for order ${orderNumber}. Reason: ${reason}\nDepending on your bank it can take a few days to appear.\n\n${lookupUrl}`,
+    html: layout(
+      "Your refund is on its way",
+      paragraph(`Hi ${name},`) +
+        paragraph(`We've refunded ${formatNaira(totalKobo)} for order ${orderNumber}.`) +
+        paragraph(`Reason: ${reason}`) +
+        paragraph("Depending on your bank, it can take a few working days to appear.") +
+        button("VIEW ORDER", lookupUrl),
     ),
   }),
   listing_approved: ({ name, scentName, url }) => ({
