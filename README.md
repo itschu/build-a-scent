@@ -42,6 +42,7 @@ against Paystack or Flutterwave sandboxes, set `PAYMENTS_MODE=live` with test ke
 | `pnpm db:seed [--sample]` | Idempotent seed; never overwrites existing rows |
 | `pnpm admin:promote --email <email>` | Promote an existing account to admin |
 | `pnpm db:studio` | Browse the database with Drizzle Studio |
+| `pnpm jobs:run` | Run all background jobs once (Railway cron every 5 minutes; see `docs/railway.md`) |
 
 ## Project layout
 
@@ -61,4 +62,4 @@ the database is prerendered. Check with `DATABASE_URL=postgres://x@127.0.0.1:1/x
 All database access goes through `src/server`. The browser never talks to Postgres, and
 each data access function enforces the authorization rules in the Tech Plan.
 
-Deployment is described in [`docs/railway.md`](docs/railway.md).
+Deployment is described in [`docs/railway.md`](docs/railway.md); run the [launch smoke checks](docs/launch-smoke-checks.md) before going live and after risky deploys.

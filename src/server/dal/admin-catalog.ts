@@ -36,11 +36,13 @@ function ordersUsing(ingredientId: string) {
 
 export async function listIngredientsForAdmin(actor: Actor): Promise<AdminIngredient[]> {
   assertAdmin(actor);
+  // Correlated subqueries name the outer table explicitly: in a single-table select Drizzle
+  // renders `schema.ingredients.id` as a bare "id", which would bind to the subquery's table.
   const rows = await getDb()
     .select({
       ingredient: schema.ingredients,
-      usedBy: sql<number>`(select count(*)::int from ${schema.savedScents} s where s.formula @> jsonb_build_array(jsonb_build_object('ingredientId', ${schema.ingredients.id})))`,
-      ordered: sql<number>`(select count(*)::int from ${schema.orderItems} oi where oi.item_snapshot -> 'formula' @> jsonb_build_array(jsonb_build_object('ingredientId', ${schema.ingredients.id})))`,
+      usedBy: sql<number>`(select count(*)::int from ${schema.savedScents} s where s.formula @> jsonb_build_array(jsonb_build_object('ingredientId', ${schema.ingredients}.id)))`,
+      ordered: sql<number>`(select count(*)::int from ${schema.orderItems} oi where oi.item_snapshot -> 'formula' @> jsonb_build_array(jsonb_build_object('ingredientId', ${schema.ingredients}.id)))`,
     })
     .from(schema.ingredients)
     .orderBy(asc(schema.ingredients.noteTier), asc(schema.ingredients.name));

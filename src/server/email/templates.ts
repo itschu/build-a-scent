@@ -20,6 +20,7 @@ type TemplateMap = {
   verify_email: { name: string; url: string };
   reset_password: { name: string; url: string };
   test_email: { sentBy: string };
+  payment_under_review: { name: string; orderNumber: string; lookupUrl: string };
   order_shipped: { name: string; orderNumber: string; eta: string | null; lookupUrl: string };
   order_delivered: { name: string; orderNumber: string; lookupUrl: string };
   order_refunded: { name: string; orderNumber: string; totalKobo: number; reason: string; lookupUrl: string };
@@ -90,6 +91,17 @@ const templates: { [T in EmailTemplate]: (p: TemplateMap[T]) => RenderedEmail } 
         paragraph("Use the button below to choose a new password. The link is valid for 1 hour.") +
         button("RESET PASSWORD", url) +
         paragraph("If you didn't ask for this, you can ignore this email."),
+    ),
+  }),
+  payment_under_review: ({ name, orderNumber, lookupUrl }) => ({
+    subject: `We're confirming your payment for order ${orderNumber}`,
+    text: `Hi ${name},\n\nWe haven't received confirmation from the payment provider for order ${orderNumber} yet, so our team is checking it. You don't need to pay again. We'll email you as soon as it's confirmed.\n\n${lookupUrl}`,
+    html: layout(
+      "Your payment is being reviewed",
+      paragraph(`Hi ${name},`) +
+        paragraph(`We haven't received confirmation from the payment provider for order ${orderNumber} yet, so our team is checking it.`) +
+        paragraph("You don't need to pay again. We'll email you as soon as it's confirmed.") +
+        button("CHECK ORDER STATUS", lookupUrl),
     ),
   }),
   order_shipped: ({ name, orderNumber, eta, lookupUrl }) => ({

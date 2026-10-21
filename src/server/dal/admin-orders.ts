@@ -30,6 +30,9 @@ export type AdminOrderRow = {
   paymentGateway: string;
   createdAt: Date;
   verifyingSince: Date | null;
+  paymentReference: string | null;
+  verifyAttempts: number;
+  lastGatewayStatus: string | null;
   itemTypes: OrderItemType[];
 };
 
@@ -51,7 +54,7 @@ export async function listOrdersForAdmin(
     tabFilter(filters.tab),
     filters.status ? eq(schema.orders.status, filters.status) : undefined,
     filters.type
-      ? sql`exists (select 1 from ${schema.orderItems} oi where oi.order_id = ${schema.orders.id} and oi.item_type = ${filters.type})`
+      ? sql`exists (select 1 from ${schema.orderItems} oi where oi.order_id = ${schema.orders}.id and oi.item_type = ${filters.type})`
       : undefined,
     search ? or(ilike(schema.orders.orderNumber, `%${search}%`), ilike(schema.orders.email, `%${search}%`)) : undefined,
   );
@@ -61,7 +64,7 @@ export async function listOrdersForAdmin(
     db
       .select({
         order: schema.orders,
-        itemTypes: sql<OrderItemType[]>`(select coalesce(array_agg(distinct oi.item_type), '{}') from ${schema.orderItems} oi where oi.order_id = ${schema.orders.id})`,
+        itemTypes: sql<OrderItemType[]>`(select coalesce(array_agg(distinct oi.item_type), '{}') from ${schema.orderItems} oi where oi.order_id = ${schema.orders}.id)`,
       })
       .from(schema.orders)
       .where(where)
@@ -87,6 +90,9 @@ export async function listOrdersForAdmin(
       paymentGateway: order.paymentGateway,
       createdAt: order.createdAt,
       verifyingSince: order.verifyingSince,
+      paymentReference: order.paymentReference,
+      verifyAttempts: order.verifyAttempts,
+      lastGatewayStatus: order.lastGatewayStatus,
       itemTypes,
     })),
   };

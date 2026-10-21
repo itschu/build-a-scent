@@ -5,7 +5,7 @@ import { env } from "@/env";
 import { getDb, schema, type Db, type Tx } from "@/server/db";
 import { isEmailTemplate, renderEmail, type EmailPayload, type EmailTemplate } from "./templates";
 
-const MAX_ATTEMPTS = 6;
+export const MAX_ATTEMPTS = 6;
 
 let transporter: Transporter | undefined;
 

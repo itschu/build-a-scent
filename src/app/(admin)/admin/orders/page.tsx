@@ -33,6 +33,12 @@ function minutesSince(date: Date): number {
   return Math.round((Date.now() - date.getTime()) / 60_000);
 }
 
+function formatAge(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 48 * 60) return `${Math.round(minutes / 60)} h`;
+  return `${Math.round(minutes / 1440)} days`;
+}
+
 async function Orders({ searchParams }: { searchParams: PageProps<"/admin/orders">["searchParams"] }) {
   const params = await searchParams;
   const tab = (ORDER_TABS as readonly string[]).includes(one(params.tab) ?? "") ? (one(params.tab) as OrderTab) : "review";
@@ -109,6 +115,11 @@ async function Orders({ searchParams }: { searchParams: PageProps<"/admin/orders
                       {o.orderNumber}
                     </Link>
                     <span className="block text-xs text-faint">{o.paymentGateway}</span>
+                    {tab === "review" && (
+                      <span className="block text-[0.7rem] text-faint">
+                        {o.paymentReference} · {o.verifyAttempts} checks · gateway: {o.lastGatewayStatus ?? "no reply yet"}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-champagne">
                     {o.customerName}
@@ -119,7 +130,7 @@ async function Orders({ searchParams }: { searchParams: PageProps<"/admin/orders
                   <td className="px-4 py-3 text-xs">
                     <span className="text-champagne">{ADMIN_ORDER_STATUS[o.status]}</span>
                     {o.status === "verifying_payment" && o.verifyingSince && (
-                      <span className="block text-faint">for {minutesSince(o.verifyingSince)} min</span>
+                      <span className="block text-faint">for {formatAge(minutesSince(o.verifyingSince))}</span>
                     )}
                     {o.needsAttention && <span className="mt-1 block text-danger">⚠ {o.attentionReason ?? "Needs attention"}</span>}
                   </td>
