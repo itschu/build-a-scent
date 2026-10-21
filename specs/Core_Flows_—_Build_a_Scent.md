@@ -2,7 +2,7 @@
 
 ## Navigation Structure
 
-The global navigation bar contains: **Logo · Build a Scent · Shop · Marketplace · My Library** (logged-in only) **· Account** (avatar/icon top-right). On mobile, collapses to a hamburger menu. Guests see "Sign In" in place of Account.
+The global navigation bar contains: **Logo · Build a Scent · Shop · Marketplace · My Library** (logged-in only) **· Cart** (icon with item count) **· Notifications** (bell with unread count, logged-in only) **· Account** (avatar/icon top-right). On mobile, collapses to a hamburger menu (cart icon stays visible). Guests see "Sign In" in place of Account. The footer contains a **Look Up Order** link (Flow 10).
 
 ## Flow 1 — Landing & Entry
 
@@ -64,6 +64,10 @@ The global navigation bar contains: **Logo · Build a Scent · Shop · Marketpla
 
 The mixer is a 4-step wizard with a persistent animated bottle visual on the right that fills as ingredients are added.
 
+- A **"Save Draft"** button sits in the wizard header on every step once at least 1 ingredient has been chosen. It saves the partial blend and the current step (auth gate for guests, Flow 3), so **Resume** later returns the user to exactly that step.
+- Ingredients can be dragged into the drop zone **or** selected by click/keyboard (accessibility).
+- Only active ingredients are shown.
+
 ### Step 1 — Base Notes
 
 1. User sees a grid of base note ingredient cards (e.g. Sandalwood, Musk, Amber, Cedarwood). Each card shows a colour swatch, name, and scent family tag.
@@ -88,11 +92,10 @@ The mixer is a 4-step wizard with a persistent animated bottle visual on the rig
 1. User sees their completed bottle with all three note layers animated.
 2. A text field prompts: **"Give your scent a name"**.
 3. Below the bottle: a breakdown card showing all selected ingredients grouped by tier.
-4. User selects **bottle size** (10ml / 30ml / 50ml / 100ml) and **format** (Spray / Roll-on / Oil) — price updates dynamically.
-5. Four action buttons:
-  - **"Add to Cart"** → proceeds to checkout flow.
-  - **"Save Draft"** → saves the current blend as a draft so the user can resume later (auth gate for guests).
-  - **"Save to Library"** → saves the scent as a finished blend (auth gate for guests) then shows a success toast.
+4. User selects **bottle size** (10ml / 30ml / 50ml / 100ml) and **format** (Spray / Roll-on / Oil); the price updates dynamically. Price = bottle base price + ingredient cost. Ingredient cost scales with the bottle's volume and the format's concentration, with the concentrate split across tiers by fixed shares (see Tech Plan, Decision 7).
+5. Three action buttons (plus **Save Draft** in the header):
+  - **"Add to Cart"** → adds the blend to the cart and proceeds to the checkout flow.
+  - **"Save to Library"** → saves the scent as a finished blend (auth gate for guests), then shows a success toast.
   - **"List for Sale"** → requires auth if needed, saves the scent first, then opens the marketplace listing flow (see Flow 5).
 
 ```wireframe
@@ -199,29 +202,33 @@ The mixer is a 4-step wizard with a persistent animated bottle visual on the rig
 **Trigger:** Guest user clicks **"Save Draft"**, **"Save to Library"**, **"List for Sale"**, or another save/listing action in the mixer.
 
 1. A modal overlays the current screen with the message: **"Save your scent — create a free account or sign in."**
-2. Options: **Sign Up** (email/password) or **Sign In** (existing account). Social login options shown below.
-3. On successful auth, the modal closes, the requested action completes automatically. If the action was **List for Sale**, the scent is first saved and then the listing flow opens.
-4. User is returned to exactly where they were (mixer step, listing flow, library, etc.).
+2. Options: **Sign Up** (email/password) or **Sign In** (existing account). **Continue with Google** is shown below.
+3. Before auth starts, the in-progress blend and the pending action are stored in the browser session, so they survive the Google redirect.
+4. On successful auth, the modal closes and the requested action completes automatically. If the action was **List for Sale**, the scent is first saved and then the listing flow opens.
+5. User is returned to exactly where they were (mixer step, listing flow, library, etc.).
+6. Listing for sale additionally requires a **verified email**. If the email is unverified, the listing form shows a "Verify your email to list" prompt with a resend link; the saved scent is kept.
 
 ## Flow 4 — Checkout (Custom Scent or Standard Product)
 
 **Trigger:** User clicks "Add to Cart" from the mixer preview or a product page.
 
 1. Cart icon in nav updates with item count. User can continue shopping or click cart to review.
-2. **Cart page:** Shows item(s) with name, size/format (for custom), quantity, price in NGN (toggle to USD available). Edit or remove items.
+2. **Cart page:** Shows item(s) with name, size/format (for custom), quantity, and price in NGN (a USD view is available as display-only). Edit or remove items. Marketplace items show their note profile, not the formula.
 3. User clicks **"Proceed to Checkout"**.
 4. **Checkout page:**
-  - Guest: enters name, email, delivery address.
-  - Logged-in: address pre-filled from profile; can edit.
-  - Order summary shown on the right.
+  - Guest: enters name, email, phone, and delivery address (street, city, Nigerian state).
+  - Logged-in: details pre-filled from profile; can edit.
+  - Choosing a state shows the **shipping fee** and an **estimated delivery window** (production lead time + the zone's ETA). States outside every active shipping zone show "We don't deliver here yet" and block checkout.
+  - Order summary on the right: subtotal, shipping, total.
 5. **Payment selection:** Two options displayed — **Paystack** and **Flutterwave** (radio buttons with logos). User selects one.
 6. User clicks **"Pay Now"**.
-7. Before payment starts, the platform revalidates cart prices, listing availability, and stock. If anything has changed, checkout is blocked and the user is returned to cart review with the updated state.
+7. Before payment starts, the platform revalidates cart prices, ingredient/bottle availability, listing availability, stock, and the shipping fee. If anything has changed, checkout is blocked and the user is returned to cart review with the updated state and a short explanation per affected item (e.g. "Price updated", "No longer available").
 8. If revalidation passes, the user is redirected to the selected gateway's payment page/modal.
-9. After payment, user is redirected to a **Payment Processing** page while the platform verifies the transaction.
-10. If verification takes too long, the page stops spinning and explains that the payment is under manual review; the user is told they will be updated once the team confirms the payment.
-11. Once verification succeeds, the user is taken to the **Order Confirmation page**.
-12. **Confirmation page:** Animated visual of the custom bottle (or product image) with scent name, notes breakdown, order number, and estimated delivery timeframe. Email confirmation sent automatically. Guest users can later look up the order using **order number + email**.
+9. After payment, user is redirected to a **Payment Processing** page while the platform verifies the transaction with the gateway (webhook, or a direct server-side check with the gateway).
+10. If payment fails, the page says so and offers **"Try again"**, which returns to checkout with the cart intact.
+11. If verification takes longer than about 90 seconds, the page stops spinning and explains that the payment is under manual review. The user is told they will be emailed once the team confirms the payment, and is shown their order number for lookup.
+12. Once verification succeeds, the cart is cleared and the user is taken to the **Order Confirmation page**.
+13. **Confirmation page:** Animated visual of the custom bottle (or product image) with scent name, notes breakdown (note profile only for marketplace items), order number, and estimated delivery window. Email confirmation is sent automatically and includes a **Look Up Order** link. Guest users can later look up the order using **order number + email**.
 
 ```wireframe
 
@@ -267,6 +274,7 @@ The mixer is a 4-step wizard with a persistent animated bottle visual on the rig
       <div class="section-title">DELIVERY DETAILS</div>
       <div class="form-group"><label>FULL NAME</label><input value="Adaeze Okonkwo" /></div>
       <div class="form-group"><label>EMAIL</label><input value="adaeze@email.com" /></div>
+      <div class="form-group"><label>PHONE</label><input value="+234 803 000 0000" /></div>
       <div class="form-group"><label>DELIVERY ADDRESS</label><input value="14 Victoria Island, Lagos" /></div>
       <div class="form-row">
         <div class="form-group"><label>CITY</label><input value="Lagos" /></div>
@@ -282,7 +290,7 @@ The mixer is a 4-step wizard with a persistent animated bottle visual on the rig
           <div class="payment-radio"></div>
           <div class="payment-name">FLUTTERWAVE</div>
         </div>
-        <button class="pay-btn" data-element-id="btn-pay">PAY ₦24,500</button>
+        <button class="pay-btn" data-element-id="btn-pay">PAY ₦27,500</button>
       </div>
     </div>
     <div class="checkout-right">
@@ -291,9 +299,13 @@ The mixer is a 4-step wizard with a persistent animated bottle visual on the rig
         <div><div class="item-name">Midnight Bloom</div><div class="item-detail">Custom Scent · 50ml · Spray</div></div>
         <div class="item-price">₦24,500</div>
       </div>
+      <div class="order-item">
+        <div><div class="item-name">Shipping</div><div class="item-detail">Lagos zone · arrives in 5–7 days</div></div>
+        <div class="item-price">₦3,000</div>
+      </div>
       <div class="total-row">
         <div class="total-label">TOTAL</div>
-        <div class="total-amount">₦24,500</div>
+        <div class="total-amount">₦27,500</div>
       </div>
       <div class="currency-toggle" data-element-id="currency-toggle">VIEW IN USD →</div>
     </div>
@@ -306,27 +318,30 @@ The mixer is a 4-step wizard with a persistent animated bottle visual on the rig
 
 **Trigger:** User clicks "List for Sale" from the mixer post-build screen OR from a saved scent in their Scent Library.
 
-1. If the user starts from the mixer, the platform requires auth if needed, saves the scent to the library first, then opens the listing form.
+1. If the user starts from the mixer, the platform requires auth if needed, saves the scent to the library first, then opens the listing form. A verified email is required (Flow 3, step 6).
 2. A listing form slides in (or navigates to `/marketplace/list`):
   - Scent name (pre-filled from saved name).
   - Description field (optional, max 200 chars).
-  - **Seller price** input — user sets their desired price. A current commission estimate is shown below (e.g. "At the current platform rate, you would earn ₦X"). Final commission is calculated at sale time.
+  - **Creator markup** input: the amount the creator adds on top of the blend's price (minimum set by admin, e.g. ₦1,000).
+  - **Live price breakdown:** blend price (what the platform charges to make it) · your markup · **buyer pays** · "At the current platform rate (20%), you would earn ₦X per sale." Final commission is calculated at sale time; if the admin changes ingredient prices, the buyer price changes but the creator's markup does not.
+  - **Featured notes:** choose up to 3 of the blend's ingredients to reveal to buyers. Buyers see only the scent families of each tier plus these featured notes; **the full formula stays private**.
   - Bottle size and format inherited from the saved blend (shown as read-only in v1).
 3. User clicks **"Submit for Review"**.
-4. Confirmation screen: **"Your scent has been submitted for review. We'll notify you once it's approved."**
-5. Listing appears in the user's dashboard with status **"Pending Review"**.
+4. If another creator already has an active listing with the exact same formula, submission is blocked with: **"A scent with this exact formula is already on the marketplace. Try adjusting your blend."**
+5. Confirmation screen: **"Your scent has been submitted for review. We'll notify you once it's approved."**
+6. Listing appears in the seller dashboard with status **"Pending Review"**, and the scent shows a **Listed** badge in the library. The formula of a listed scent is locked (editing in the mixer creates a new version).
 
 ## Flow 6 — Admin Approval of Marketplace Listings
 
 **Trigger:** A user submits a scent for marketplace listing.
 
 1. Admin sees a **"Pending Listings"** queue in the admin panel with count badge.
-2. Each listing card shows: scent name, creator, notes breakdown, seller price, current commission estimate, and submission date.
+2. Each listing card shows: scent name, creator, full formula (admins only), featured notes, price breakdown (blend price, creator markup, buyer price, current commission estimate), description, and submission date. A **possible duplicate** warning appears if a matching formula exists.
 3. Admin clicks a listing to open the detail view.
 4. Admin chooses:
   - **Approve** → listing goes live on the marketplace immediately. Seller receives an in-app notification + email: **"Your scent [Name] is now live on the marketplace!"**
   - **Reject** → admin must enter a required reason (text field). Seller receives in-app notification + email with the reason and a **"Resubmit"** button.
-5. Seller can edit their listing based on the rejection reason and resubmit — re-enters the approval queue.
+5. Seller can edit the listing's description, markup, and featured notes based on the rejection reason and resubmit; it re-enters the approval queue. (A formula change means building a new version in the mixer and listing that instead.)
 
 ```wireframe
 
@@ -378,7 +393,7 @@ The mixer is a 4-step wizard with a persistent animated bottle visual on the rig
           <span class="pill">HEART: Rose, Jasmine</span>
           <span class="pill">TOP: Bergamot</span>
         </div>
-        <div class="price-row">Seller price: <span class="price-highlight">₦18,000</span> · Current estimate at 20%: seller may earn ₦14,400</div>
+        <div class="price-row">Blend ₦23,050 + markup ₦5,000 = buyer pays <span class="price-highlight">₦28,050</span> · At 20%: seller may earn ₦4,000</div>
       </div>
       <div class="action-btns">
         <button class="btn-approve" data-element-id="btn-approve-1">APPROVE</button>
@@ -394,7 +409,7 @@ The mixer is a 4-step wizard with a persistent animated bottle visual on the rig
           <span class="pill">HEART: Iris</span>
           <span class="pill">TOP: Pepper, Lemon</span>
         </div>
-        <div class="price-row">Seller price: <span class="price-highlight">₦22,000</span> · Current estimate at 20%: seller may earn ₦17,600</div>
+        <div class="price-row">Blend ₦19,400 + markup ₦4,000 = buyer pays <span class="price-highlight">₦23,400</span> · At 20%: seller may earn ₦3,200</div>
       </div>
       <div class="action-btns">
         <button class="btn-approve" data-element-id="btn-approve-2">APPROVE</button>
@@ -411,14 +426,15 @@ The mixer is a 4-step wizard with a persistent animated bottle visual on the rig
 **Trigger:** Logged-in user clicks "My Library" in the nav.
 
 1. Library page has two sections/tabs: **Saved Scents** and **Drafts**.
-2. **Saved Scents** shows a grid of finished scent cards. Each card displays: bottle visual, scent name, notes summary, date saved, and action buttons.
+2. **Saved Scents** shows a grid of finished scent cards. Each card displays: bottle visual, scent name, notes summary, date saved, a listing badge if listed (Pending Review / Live / Rejected / Unavailable), and action buttons.
 3. **Actions per saved scent card:**
-  - **Reorder** → adds the exact blend (with last-used size/format) to cart. One click.
-  - **Edit** → opens the mixer pre-loaded with the saved blend. User can tweak ingredients and save as a new version (original is preserved).
-  - **List for Sale** → triggers Flow 5 (marketplace listing).
-4. **Drafts** shows in-progress scents with a **Resume** action that reopens the mixer at the saved draft state.
-5. If a saved scent contains an ingredient that has since been deactivated by admin, the scent remains visible but becomes **fully view-only**. **Edit**, **Reorder**, and **List for Sale** are disabled, and the card explains that the formula is no longer available for sale or reorder.
-6. Empty state (no saved scents): a prompt card — **"You haven't saved any scents yet. Build your first one."** with a CTA to the mixer.
+  - **Reorder** → adds the exact blend (with its saved size/format) to the cart at the current price. One click.
+  - **Edit** → opens the mixer pre-loaded with the saved blend. Saving always creates a new version; the original is preserved (and stays locked if it is listed).
+  - **Share** → turns on a public link (`/s/…`) and copies it (Flow 11). Can be turned off at any time.
+  - **List for Sale** → triggers Flow 5 (hidden once the scent has a listing; the badge links to the seller dashboard instead).
+4. **Drafts** shows in-progress scents (possibly incomplete) with the step reached, plus **Resume** (reopens the mixer at that step with the saved selections) and **Delete** actions.
+5. If a saved scent contains an ingredient or bottle option that has since been deactivated by admin, the scent remains visible but becomes **fully view-only**. **Edit**, **Reorder**, **Share**, and **List for Sale** are disabled, and the card explains that the formula is no longer available for sale or reorder.
+6. Empty states: Saved Scents: **"You haven't saved any scents yet. Build your first one."** with a CTA to the mixer. Drafts: **"No drafts in progress."**
 
 ## Flow 8 — Standard Store (Shop)
 
@@ -432,10 +448,11 @@ The mixer is a 4-step wizard with a persistent animated bottle visual on the rig
 
 **Trigger:** User clicks "Marketplace" in the nav.
 
-1. Marketplace page shows a grid of community-created, approved scents. Each card shows: bottle visual, scent name, creator name, notes summary, and price.
-2. Filters: scent family, price range, top ingredients.
-3. User clicks a scent → detail page with full notes breakdown, creator profile snippet, and price.
-4. User clicks **"Add to Cart"** → same checkout flow (Flow 4). Platform commission is handled invisibly in the backend.
+1. Marketplace page shows a grid of community-created, approved scents. Each card shows: bottle visual, scent name, creator display name, **note profile** (scent family per tier + featured notes), and buyer price.
+2. Filters: scent family, price range, featured notes.
+3. User clicks a scent → detail page with the note profile, description, bottle size/format, creator profile snippet (display name, avatar, short bio), and price. The full formula is never shown to buyers.
+4. User clicks **"Add to Cart"** → same checkout flow (Flow 4). The platform/creator split is handled invisibly in the backend.
+5. Listings that become unavailable (e.g. an ingredient was discontinued) disappear from the marketplace automatically; a stale link shows "This scent is currently unavailable."
 
 ## Flow 10 — Guest Order Lookup
 
@@ -443,8 +460,40 @@ The mixer is a 4-step wizard with a persistent animated bottle visual on the rig
 
 1. User lands on a dedicated order lookup page.
 2. User enters **order number + email**.
-3. If the combination matches, the platform shows the order status and confirmation-safe order details.
+3. If the combination matches, the platform shows the order status (e.g. Payment under review, Paid, In production, Shipped, Delivered, Refunded) and confirmation-safe order details, including the estimated delivery window.
 4. If the order is still under manual payment review, the page explains that verification is in progress.
+5. If there is no match, a generic "We couldn't find that order" message is shown (no hint about which field was wrong). Repeated attempts are rate-limited.
+
+## Flow 11 — Share a Scent
+
+**Trigger:** Logged-in user clicks **Share** on a saved scent in the library.
+
+1. Sharing is turned on for that scent and a public link (`/s/<random-token>`) is copied to the clipboard.
+2. Anyone with the link sees a read-only page: bottle visual, scent name, creator display name, notes breakdown, and price for the saved size/format.
+3. CTAs: **"Order this blend"** (adds it to the cart as a custom scent) and **"Build your own"** (opens the mixer pre-loaded with the blend; saving it creates the viewer's own copy).
+4. If the scent has a live marketplace listing, the shared page hides the formula, shows the note profile, and its CTA links to the marketplace listing instead, protecting the creator's sales.
+5. The owner can turn sharing off at any time; the old link then shows "This scent is no longer shared."
+
+## Flow 12 — Seller Listing Management
+
+**Trigger:** Seller opens **Account → Seller Dashboard** (`/account/seller`).
+
+1. The dashboard lists every listing with its status: **Pending Review**, **Live**, **Rejected** (with reason), **Unavailable** (with reason, e.g. "Ingredient Jasmine was discontinued"), or **Withdrawn**.
+2. Actions:
+  - **Edit & Resubmit** (rejected): change description, markup, or featured notes, then resubmit.
+  - **Withdraw** (pending, live, or rejected): removes the listing from the queue/marketplace.
+  - **Relist** (withdrawn): sends the listing back to review.
+3. Unavailable listings return to **Live** automatically when the admin reactivates the missing ingredient or bottle option; the seller is notified both ways.
+4. An earnings panel shows **pending** earnings (paid orders not yet delivered), **available** earnings (delivered orders, minus any refunds), and a history of ledger entries. Payouts are not available in v1; the panel says so.
+
+## Flow 13 — Admin Order Handling
+
+**Trigger:** Admin opens **Orders** in the admin panel.
+
+1. Tabs: **Needs Review** (orders stuck in payment verification or flagged for attention, e.g. amount mismatch or paid after stock ran out), **To Fulfil** (paid / in production / shipped), **All Orders**.
+2. **Manual payment review:** the admin clicks **"Re-verify with gateway"**. The platform asks the gateway directly. If the payment succeeded, the order becomes Paid and the normal confirmation email goes out; if it failed, it becomes Payment Failed. If the gateway has no record, the admin can **Cancel** the order.
+3. **Fulfilment:** the admin moves an order through **In Production → Shipped → Delivered**. The customer gets an email at Shipped and Delivered. Marking it **Delivered** makes any marketplace seller earnings on that order available.
+4. **Refund:** after issuing a full refund in the gateway dashboard, the admin clicks **Record Refund**, enters a reason, and optionally returns standard-product stock. The order becomes Refunded, seller earnings for it are reversed, and the customer is emailed.
 
 ## Flow Overview
 
@@ -458,7 +507,10 @@ flowchart TD
     F --> G[Mixer: Top Notes]
     G --> H[Name & Preview]
     H --> I[Add to Cart]
-    H --> J[Save Draft]
+    E -.-> J[Save Draft - any step]
+    F -.-> J
+    G -.-> J
+    H -.-> J
     H --> K[Save to Library]
     H --> L[List for Sale]
     J --> M{Guest?}
@@ -471,7 +523,9 @@ flowchart TD
     M -- No --> P[Library]
     L --> O
     O --> Q[Listing Form]
-    Q --> R[Admin Review Queue]
+    Q --> QD{Duplicate formula?}
+    QD -- Yes --> Q
+    QD -- No --> R[Admin Review Queue]
     R -- Approve --> S[Live on Marketplace]
     R -- Reject + Reason --> T[Seller Notified]
     T --> Q
@@ -486,5 +540,12 @@ flowchart TD
     Z -- Delayed --> AB[Manual Review Message]
     P --> AC[Saved Tab / Drafts Tab]
     AC --> AD[Resume Draft or View-Only Scent]
+    AC --> AG[Share Link]
+    AG --> AH[Shared Scent Page]
+    AH --> I
     AE[Guest Order Lookup] --> AF[Order Status]
+    AA --> AI[Admin: Production / Shipped / Delivered]
+    AB --> AJ[Admin: Re-verify with Gateway]
+    AJ --> AA
+    AI --> AK[Seller Earnings Available]
 ```
