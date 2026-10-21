@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState } from "react";
+import { CartDrawer } from "@/components/cart/cart-drawer";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useSession } from "@/lib/auth-client";
 import { cn } from "@/lib/cn";
@@ -97,6 +98,7 @@ function InteractiveHeader() {
         </div>
       </div>
 
+      <CartDrawer />
       {menuOpen && (
         <nav id="mobile-menu" aria-label="Main" className="border-t border-line bg-ink px-4 pb-6 md:hidden">
           {links.map((l) => (

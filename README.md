@@ -22,6 +22,14 @@ pnpm dev
 Integration variables (Google, Paystack, Flutterwave, SMTP, storage) are optional locally
 and required in production; the server refuses to start without them.
 
+### Payments locally
+
+With `PAYMENTS_MODE=fake` (localhost only), checkout sends you to `/dev/fake-gateway`, a test
+page that can pay, decline, pay the wrong amount, or pay without sending the webhook (to see
+the processing page verify directly). It sends real, signed webhooks to the app. To test
+against Paystack or Flutterwave sandboxes, set `PAYMENTS_MODE=live` with test keys and expose
+`/api/webhooks/paystack` and `/api/webhooks/flutterwave` to the gateway.
+
 ## Scripts
 
 | Command | What it does |

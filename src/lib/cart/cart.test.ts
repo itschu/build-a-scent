@@ -59,3 +59,18 @@ describe("cart", () => {
     expect(removeLine(lines, lines[1].key)).toHaveLength(1);
   });
 });
+
+describe("applyIssues", () => {
+  it("removes, re-prices and reduces lines", async () => {
+    const { applyIssues } = await import("./cart");
+    let lines = addLine([], blend, 2);
+    lines = addLine(lines, variant, 4);
+    const [b, v] = lines;
+    const next = applyIssues(lines, [
+      { key: b.key, kind: "price_changed", message: "", newPriceKobo: 1 },
+      { key: v.key, kind: "quantity_reduced", message: "", newQuantity: 2 },
+    ]);
+    expect(next.map((l) => [l.displayPriceKobo, l.quantity])).toEqual([[1, 2], [1_800_000, 2]]);
+    expect(applyIssues(lines, [{ key: b.key, kind: "unavailable", message: "" }])).toHaveLength(1);
+  });
+});
