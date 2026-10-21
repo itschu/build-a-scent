@@ -41,3 +41,11 @@ export function assertOwnerOrAdmin(actor: Actor, ownerId: string): asserts actor
   assertSignedIn(actor);
   if (actor.userId !== ownerId && actor.role !== "admin") throw new AuthorizationError();
 }
+
+/** Input that is well-formed but not acceptable (e.g. a discontinued ingredient). Safe to show. */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationError";
+  }
+}

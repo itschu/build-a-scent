@@ -1,11 +1,11 @@
 // The Authorization Rules from the Tech Plan (§3). Each rule becomes a real test against
 // Postgres in the ticket that builds the matching DAL module. Covered so far: profiles,
-// roles and notifications (tests/server/auth.test.ts, profiles-notifications.test.ts).
+// roles and notifications (tests/server/auth.test.ts, profiles-notifications.test.ts) and
+// scent ownership (tests/server/scents.test.ts).
 import { describe, it } from "vitest";
 
 describe("authorization rules", () => {
   describe("saved_scents (T3, T4)", () => {
-    it.todo("owners can read and write their own scents; other users cannot");
     it.todo("admins can read all scents");
     it.todo("the public can read a scent only via a valid share token while sharing is on");
     it.todo("a shared scent with an approved listing never exposes its formula");
