@@ -79,6 +79,8 @@ describe.skipIf(!testDatabaseUrl)("database schema", () => {
     expect(await conn.db.$count(conn.schema.bottleOptions)).toBe(8);
     expect(await conn.db.$count(conn.schema.shippingZones)).toBe(2);
     expect(await conn.db.$count(conn.schema.ingredients)).toBe(18);
+    expect(await conn.db.$count(conn.schema.products)).toBe(3);
+    expect(await conn.db.$count(conn.schema.productVariants)).toBe(5);
   });
 
   it("rejects values outside the allowed enums", async () => {

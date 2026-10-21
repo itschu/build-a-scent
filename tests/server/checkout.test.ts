@@ -43,7 +43,7 @@ describe.skipIf(!testDatabaseUrl)("checkout and payments", () => {
 
     const [product] = await conn.db
       .insert(conn.schema.products)
-      .values({ slug: "noir-classic", name: "Noir Classic", scentFamily: "Woody", notes: { base: ["Oud"], heart: [], top: [] } })
+      .values({ slug: "test-noir", name: "Test Noir", scentFamily: "Woody", notes: { base: ["Oud"], heart: [], top: [] } })
       .returning();
     const [variant] = await conn.db
       .insert(conn.schema.productVariants)

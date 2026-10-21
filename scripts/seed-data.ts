@@ -58,6 +58,40 @@ const SAMPLE_INGREDIENTS: Array<[string, NoteTier, string, string, number]> = [
   ["Lavender", "top", "Aromatic", "#a68fd8", 450],
 ];
 
+// Development shop catalogue (no images: the shop shows a bottle illustration instead).
+const SAMPLE_PRODUCTS = [
+  {
+    slug: "noir-classic",
+    name: "Noir Classic",
+    scentFamily: "Woody",
+    description: "Smoked oud and amber warmed with a whisper of pink pepper. Our signature evening scent.",
+    notes: { base: ["Oud", "Amber"], heart: ["Iris"], top: ["Pink Pepper"] },
+    variants: [
+      { sizeLabel: "50ml", format: "spray" as const, priceKobo: naira(28_000), stockQty: 24 },
+      { sizeLabel: "100ml", format: "spray" as const, priceKobo: naira(45_000), stockQty: 3 },
+    ],
+  },
+  {
+    slug: "lagos-bloom",
+    name: "Lagos Bloom",
+    scentFamily: "Floral",
+    description: "Jasmine and rose over soft musk, bright with bergamot.",
+    notes: { base: ["Musk"], heart: ["Jasmine", "Rose"], top: ["Bergamot"] },
+    variants: [
+      { sizeLabel: "30ml", format: "spray" as const, priceKobo: naira(16_500), stockQty: 40 },
+      { sizeLabel: "10ml", format: "roll_on" as const, priceKobo: naira(7_500), stockQty: 0 },
+    ],
+  },
+  {
+    slug: "citrus-harmattan",
+    name: "Citrus Harmattan",
+    scentFamily: "Citrus",
+    description: "Grapefruit and lemon over cedarwood: a crisp, dry-season pick-me-up.",
+    notes: { base: ["Cedarwood"], heart: ["Geranium"], top: ["Grapefruit", "Lemon"] },
+    variants: [{ sizeLabel: "10ml", format: "oil" as const, priceKobo: naira(9_000), stockQty: 15 }],
+  },
+];
+
 /**
  * Idempotent seed. Existing rows are never overwritten, so it is safe to re-run against a
  * database an admin has already edited (only each setting's public flag is kept in sync).
@@ -99,5 +133,10 @@ export async function seed(db: ScriptDb, options: { sampleData: boolean }) {
         })),
       )
       .onConflictDoNothing();
+
+    for (const { variants, ...product } of SAMPLE_PRODUCTS) {
+      const [created] = await db.insert(schema.products).values(product).onConflictDoNothing().returning({ id: schema.products.id });
+      if (created) await db.insert(schema.productVariants).values(variants.map((v) => ({ ...v, productId: created.id })));
+    }
   }
 }

@@ -2,12 +2,14 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import { listActiveBottleOptions, listActiveIngredients } from "./dal/catalog";
+import { listShopProducts } from "./dal/products";
 import { listShippingZones } from "./checkout/shipping";
 import { getPublicSettings } from "./settings";
 
 export const CACHE_TAGS = {
   catalog: "catalog",
   settings: "settings",
+  products: "products",
 } as const;
 
 export async function getMixerCatalog() {
@@ -34,6 +36,13 @@ export async function getCachedShippingZones() {
   cacheTag(CACHE_TAGS.settings);
   cacheLife("hours");
   return listShippingZones();
+}
+
+export async function getCachedShopProducts() {
+  "use cache";
+  cacheTag(CACHE_TAGS.products);
+  cacheLife("hours");
+  return listShopProducts();
 }
 
 export type MixerCatalog = Awaited<ReturnType<typeof getMixerCatalog>>;
