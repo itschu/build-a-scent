@@ -3,8 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setEmailTransportForTests } from "@/server/email";
 import { initiateCheckout } from "@/server/checkout/initiate";
 import { AuthorizationError, GUEST, ValidationError } from "@/server/dal/actor";
-import { deleteIngredient, saveBottleOption, saveIngredient, setBottleOptionActive, setIngredientActive } from "@/server/dal/admin-catalog";
-import { advanceFulfilment, cancelOrder, recordRefund, reverifyOrder } from "@/server/dal/admin-orders";
+import { deleteIngredient, listIngredientsForAdmin, saveBottleOption, saveIngredient, setBottleOptionActive, setIngredientActive } from "@/server/dal/admin-catalog";
+import { advanceFulfilment, cancelOrder, listOrdersForAdmin, recordRefund, reverifyOrder } from "@/server/dal/admin-orders";
 import { saveShippingZone, updateSettings } from "@/server/dal/admin-settings";
 import { getAnalytics } from "@/server/dal/analytics";
 import { getPublicListing, getSellerDashboard, submitListing } from "@/server/dal/marketplace";
@@ -112,6 +112,13 @@ describe.skipIf(!testDatabaseUrl)("admin operations", () => {
       await deleteIngredient(admin, id);
     });
 
+    it("the ingredient list counts the scents that use each ingredient", async () => {
+      await liveListing(["Cedarwood", "Jasmine", "Grapefruit"]);
+      const rows = await listIngredientsForAdmin(admin);
+      expect(rows.find((r) => r.name === "Cedarwood")).toMatchObject({ referenced: true });
+      expect(rows.find((r) => r.name === "Cedarwood")!.usedBy).toBeGreaterThanOrEqual(1);
+    });
+
     it("bottle options are unique by size and format", async () => {
       await expect(saveBottleOption(admin, { volumeMl: 50, format: "spray", concentrationPct: 20, basePriceKobo: 1 })).rejects.toThrow(/already exists/);
       const { id } = await saveBottleOption(admin, { volumeMl: 50, format: "oil", concentrationPct: 100, basePriceKobo: 1_400_000 });
@@ -121,6 +128,15 @@ describe.skipIf(!testDatabaseUrl)("admin operations", () => {
   });
 
   describe("orders", () => {
+    it("the order list shows each order's item types and filters by them", async () => {
+      const { id } = await liveListing(["Oud", "Rose", "Lemon"]);
+      const order = await paidOrder(id);
+      const all = await listOrdersForAdmin(admin, { tab: "all", q: order.orderNumber });
+      expect(all.rows[0].itemTypes).toEqual(["marketplace_listing"]);
+      expect((await listOrdersForAdmin(admin, { tab: "all", q: order.orderNumber, type: "marketplace_listing" })).total).toBe(1);
+      expect((await listOrdersForAdmin(admin, { tab: "all", q: order.orderNumber, type: "custom_scent" })).total).toBe(0);
+    });
+
     it("moves through fulfilment one step at a time and releases seller earnings on delivery", async () => {
       const { id, seller } = await liveListing(["Sandalwood", "Rose", "Bergamot"]);
       const order = await paidOrder(id);

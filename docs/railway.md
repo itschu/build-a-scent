@@ -7,7 +7,7 @@ network.
 | --- | --- | --- |
 | **app** | this repo (`railway.json`) | Next.js server. Runs `pnpm db:migrate` before each deploy, then `pnpm start`; health check `/api/health` |
 | **Postgres** | Railway Postgres template | Primary database. Turn on daily backups in the service's Backups tab |
-| **jobs** | this repo, cron schedule `*/5 * * * *` | Background jobs (`pnpm jobs:run`), added with launch hardening (T11) |
+| **jobs** | this repo, cron schedule `*/5 * * * *` | Background jobs (`pnpm jobs:run`): release expired stock holds, expire abandoned orders, re-verify stuck payments, retry emails, prune rate limits |
 | **Bucket** | Railway Storage Bucket (or Cloudflare R2) | Uploaded images, publicly readable |
 
 ## First deploy
@@ -36,3 +36,39 @@ upload images directly from the browser.
 
 Edit `src/server/db/schema`, run `pnpm db:generate --name <change>`, review the SQL in
 `drizzle/`, and commit it. The next deploy applies it.
+
+## Background jobs service
+
+1. In the Railway project, **New → GitHub Repo** and pick this repo again; name the service `jobs`.
+2. Settings → Deploy: set the **Start command** to `pnpm jobs:run` and the **Cron schedule** to
+   `*/5 * * * *`. Remove the health check and pre-deploy command for this service (the app
+   service already runs migrations).
+3. Variables: share the app service's variables (at minimum `DATABASE_URL`, `APP_URL`,
+   `NODE_ENV=production`, gateway secrets and SMTP), e.g. `${{app.PAYSTACK_SECRET_KEY}}`.
+
+Each run executes every job once, prints a one-line JSON summary, and exits non-zero if any
+job failed. Jobs claim rows with `FOR UPDATE SKIP LOCKED`, so overlapping runs are safe.
+
+## Payment webhooks
+
+| Gateway | Webhook URL | Secret |
+| --- | --- | --- |
+| Paystack | `https://<domain>/api/webhooks/paystack` | Signed with `PAYSTACK_SECRET_KEY` (no separate secret) |
+| Flutterwave | `https://<domain>/api/webhooks/flutterwave` | Set a **Secret hash** in the dashboard and the same value as `FLUTTERWAVE_WEBHOOK_HASH` |
+
+Use the live keys and URLs in production and the test keys on staging. Webhooks only mark
+events as received; every payment is confirmed by calling the gateway's verify API.
+
+## Backups and restore test
+
+1. Postgres service → **Backups**: enable daily backups (and keep at least 7 days).
+2. Once before launch, test a restore: in a scratch Railway project (or a new Postgres service),
+   restore the latest backup, point a local checkout at its public URL and run
+   `DATABASE_URL=<scratch url> pnpm db:migrate` (should report nothing to apply), then spot-check
+   `select count(*) from orders;` against production.
+3. Record the date in the restore log in `docs/launch-smoke-checks.md`, then delete the scratch service.
+
+## Health check
+
+`railway.json` sets `healthcheckPath: /api/health`. It returns `200 {"status":"ok"}` only when
+the database is reachable, so a deploy that cannot reach Postgres never takes traffic.
