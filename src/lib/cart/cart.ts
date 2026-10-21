@@ -87,3 +87,19 @@ export function itemCount(lines: CartLine[]): number {
 export function subtotalKobo(lines: CartLine[]): number {
   return lines.reduce((sum, l) => sum + l.displayPriceKobo * l.quantity, 0);
 }
+
+export type CartIssue =
+  | { key: string; kind: "unavailable"; message: string }
+  | { key: string; kind: "price_changed"; message: string; newPriceKobo: number }
+  | { key: string; kind: "quantity_reduced"; message: string; newQuantity: number };
+
+/** Applies checkout revalidation results to the cart so the customer reviews the new state. */
+export function applyIssues(lines: CartLine[], issues: CartIssue[]): CartLine[] {
+  let next = lines;
+  for (const issue of issues) {
+    if (issue.kind === "unavailable") next = removeLine(next, issue.key);
+    else if (issue.kind === "price_changed") next = next.map((l) => (l.key === issue.key ? { ...l, displayPriceKobo: issue.newPriceKobo } : l));
+    else next = updateLineQuantity(next, issue.key, issue.newQuantity);
+  }
+  return next;
+}

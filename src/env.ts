@@ -10,6 +10,8 @@ const core = z.object({
   BETTER_AUTH_URL: z.url(),
   BETTER_AUTH_SECRET: z.string().min(32),
   CHECKOUT_CONTEXT_SECRET: z.string().min(32),
+  // "fake" swaps Paystack/Flutterwave for a local simulator (see src/server/payments/fake.ts).
+  PAYMENTS_MODE: z.enum(["live", "fake"]).default("live"),
 });
 
 const features = z.object({
@@ -41,6 +43,11 @@ function formatIssues(error: z.ZodError): string {
   return error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
 }
 
+function isLocalUrl(url: string): boolean {
+  const { hostname } = new URL(url);
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
 /** Parses and caches the environment. Throws a readable error listing every problem. */
 export function env(): Env {
   if (cached) return cached;
@@ -58,6 +65,9 @@ export function env(): Env {
         `Missing environment variables required in production:\n${formatIssues(strict.error)}`,
       );
     }
+  }
+  if (parsed.data.PAYMENTS_MODE === "fake" && !isLocalUrl(parsed.data.APP_URL)) {
+    throw new Error("PAYMENTS_MODE=fake is only allowed when APP_URL is localhost");
   }
   cached = parsed.data;
   return cached;

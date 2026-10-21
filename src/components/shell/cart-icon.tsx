@@ -1,14 +1,17 @@
 "use client";
 
-import Link from "next/link";
+import { useCartDrawer } from "@/components/cart/cart-drawer";
 import { itemCount } from "@/lib/cart/cart";
 import { useCartStore } from "@/lib/cart/store";
 
 export function CartIcon() {
   const count = useCartStore((s) => (s.hydrated ? itemCount(s.lines) : 0));
+  const openDrawer = useCartDrawer((s) => s.setOpen);
   return (
-    <Link
-      href="/cart"
+    <button
+      type="button"
+      onClick={() => openDrawer(true)}
+      aria-haspopup="dialog"
       aria-label={count > 0 ? `Cart, ${count} item${count === 1 ? "" : "s"}` : "Cart"}
       className="relative p-2 text-muted hover:text-gold"
     >
@@ -21,6 +24,6 @@ export function CartIcon() {
           {count > 99 ? "99+" : count}
         </span>
       )}
-    </Link>
+    </button>
   );
 }

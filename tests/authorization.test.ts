@@ -1,7 +1,8 @@
 // The Authorization Rules from the Tech Plan (§3). Each rule becomes a real test against
 // Postgres in the ticket that builds the matching DAL module. Covered so far: profiles,
 // roles and notifications (tests/server/auth.test.ts, profiles-notifications.test.ts) and
-// scent ownership and sharing (tests/server/scents.test.ts, library.test.ts).
+// scent ownership and sharing (tests/server/scents.test.ts, library.test.ts), and order
+// access and redaction (tests/server/checkout.test.ts).
 import { describe, it } from "vitest";
 
 describe("authorization rules", () => {
@@ -17,10 +18,7 @@ describe("authorization rules", () => {
   });
 
   describe("orders and order_items (T5)", () => {
-    it.todo("users can read their own orders");
-    it.todo("guests can read an order only with checkout context or order number + email");
-    it.todo("guest views of marketplace items are redacted");
-    it.todo("admins can read and transition all orders");
+    it.todo("admins can transition all orders");
   });
 
   describe("catalog (T6, T9)", () => {

@@ -63,6 +63,11 @@ export const orders = pgTable(
     etaFrom: date(),
     etaTo: date(),
     paidAt: timestamp({ withTimezone: true }),
+    // Payment verification tracking (processing page, admin re-verify, background job).
+    verifyingSince: timestamp({ withTimezone: true }),
+    lastVerifyAt: timestamp({ withTimezone: true }),
+    verifyAttempts: integer().notNull().default(0),
+    lastGatewayStatus: text(),
     refundReason: text(),
     refundedAt: timestamp({ withTimezone: true }),
     ...timestamps,
