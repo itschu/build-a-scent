@@ -48,7 +48,10 @@ export function env(): Env {
   if (!parsed.success) {
     throw new Error(`Invalid environment variables:\n${formatIssues(parsed.error)}`);
   }
-  if (parsed.data.NODE_ENV === "production") {
+  // `next build` also runs with NODE_ENV=production but may not have runtime secrets;
+  // the server re-validates at boot (instrumentation), which is where this must hold.
+  const isBuild = process.env.NEXT_PHASE === "phase-production-build";
+  if (parsed.data.NODE_ENV === "production" && !isBuild) {
     const strict = features.safeParse(process.env);
     if (!strict.success) {
       throw new Error(
