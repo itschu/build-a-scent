@@ -1,5 +1,6 @@
 // The Authorization Rules from the Tech Plan (§3). Each rule becomes a real test against
-// Postgres in the ticket that builds the matching DAL module.
+// Postgres in the ticket that builds the matching DAL module. Covered so far: profiles,
+// roles and notifications (tests/server/auth.test.ts, profiles-notifications.test.ts).
 import { describe, it } from "vitest";
 
 describe("authorization rules", () => {
@@ -24,12 +25,6 @@ describe("authorization rules", () => {
     it.todo("admins can read and transition all orders");
   });
 
-  describe("profiles and users (T2)", () => {
-    it.todo("users can read and update their own profile");
-    it.todo("the public can read only display name, avatar and bio of sellers with approved listings");
-    it.todo("users cannot change their own role");
-  });
-
   describe("catalog (T6, T9)", () => {
     it.todo("the public can read only active ingredients, bottle options, products and variants");
     it.todo("only admins can write catalog data");
@@ -38,7 +33,6 @@ describe("authorization rules", () => {
   describe("system data (T5, T9, T11)", () => {
     it.todo("only the system writes reservations, ledger entries, notifications, webhook events and outbox rows");
     it.todo("sellers can read only their own ledger entries");
-    it.todo("users can read and mark read only their own notifications");
     it.todo("the public can read only public platform settings");
     it.todo("the public can read only active shipping zones");
   });
