@@ -1,13 +1,16 @@
 import { Suspense } from "react";
+import { SiteShell } from "@/components/shell/site-shell";
 import { requireUser } from "@/server/auth/session";
 
 // Every page in this group needs a signed-in user. The check reads the session, so it
-// streams behind a Suspense boundary (Cache Components).
+// streams behind a Suspense boundary (Cache Components) while the shell renders at once.
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Suspense fallback={<PageLoading />}>
-      <RequireUser>{children}</RequireUser>
-    </Suspense>
+    <SiteShell>
+      <Suspense fallback={<PageLoading />}>
+        <RequireUser>{children}</RequireUser>
+      </Suspense>
+    </SiteShell>
   );
 }
 

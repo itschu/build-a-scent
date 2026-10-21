@@ -1,7 +1,10 @@
+import { AdminPageHeader, ComingSoon } from "@/components/admin/admin-shell";
+
 export default function AdminDashboardPage() {
   return (
-    <main className="p-10">
-      <h1 className="font-serif text-2xl text-cream">Admin</h1>
-    </main>
+    <>
+      <AdminPageHeader eyebrow="Overview" title="Dashboard" />
+      <ComingSoon ticket="T9 (analytics and order queues)" />
+    </>
   );
 }

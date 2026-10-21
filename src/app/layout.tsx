@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { CartHydrator } from "@/components/shell/cart-hydrator";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,6 +25,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-full flex-col">
         {children}
         <AuthModal />
+        <CartHydrator />
       </body>
     </html>
   );

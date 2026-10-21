@@ -1,7 +1,7 @@
 import { Suspense } from "react";
+import { AdminShell } from "@/components/admin/admin-shell";
 import { requireAdmin } from "@/server/auth/session";
 
-// The sidebar shell is added with the global shell (T10).
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
     <Suspense fallback={<div className="p-16 text-sm text-muted">Loading…</div>}>
@@ -10,7 +10,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   );
 }
 
+// The shell renders only after the role check, so non-admins never see admin navigation.
 async function RequireAdmin({ children }: { children: React.ReactNode }) {
   await requireAdmin();
-  return children;
+  return <AdminShell>{children}</AdminShell>;
 }
