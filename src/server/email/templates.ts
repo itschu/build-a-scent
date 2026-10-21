@@ -20,6 +20,10 @@ type TemplateMap = {
   verify_email: { name: string; url: string };
   reset_password: { name: string; url: string };
   test_email: { sentBy: string };
+  listing_approved: { name: string; scentName: string; url: string };
+  listing_rejected: { name: string; scentName: string; reason: string; url: string };
+  listing_unavailable: { name: string; scentName: string; reason: string; url: string };
+  listing_available: { name: string; scentName: string; url: string };
 };
 
 export type EmailTemplate = keyof TemplateMap;
@@ -83,6 +87,45 @@ const templates: { [T in EmailTemplate]: (p: TemplateMap[T]) => RenderedEmail } 
         paragraph("Use the button below to choose a new password. The link is valid for 1 hour.") +
         button("RESET PASSWORD", url) +
         paragraph("If you didn't ask for this, you can ignore this email."),
+    ),
+  }),
+  listing_approved: ({ name, scentName, url }) => ({
+    subject: `${scentName} is now live on the marketplace`,
+    text: `Hi ${name},\n\nYour scent ${scentName} is now live on the marketplace!\n\nSee it here: ${url}`,
+    html: layout(
+      "Your scent is live",
+      paragraph(`Hi ${name},`) + paragraph(`Your scent ${scentName} is now live on the marketplace!`) + button("VIEW YOUR LISTING", url),
+    ),
+  }),
+  listing_rejected: ({ name, scentName, reason, url }) => ({
+    subject: `${scentName} needs changes before it can go live`,
+    text: `Hi ${name},\n\nWe couldn't approve ${scentName} yet. Reason:\n${reason}\n\nYou can update the listing and resubmit it: ${url}`,
+    html: layout(
+      "Your listing needs changes",
+      paragraph(`Hi ${name},`) +
+        paragraph(`We couldn't approve ${scentName} yet. Here's why:`) +
+        `<blockquote style="margin:0 0 16px;padding:12px 16px;border-left:2px solid #c9a84c;color:#f0e6cc">${escapeHtml(reason)}</blockquote>` +
+        paragraph("Update the description, markup or featured notes, then resubmit it for review.") +
+        button("RESUBMIT", url),
+    ),
+  }),
+  listing_unavailable: ({ name, scentName, reason, url }) => ({
+    subject: `${scentName} is temporarily unavailable`,
+    text: `Hi ${name},\n\n${scentName} has been taken off the marketplace for now: ${reason}\nIt will go live again automatically when it's available. ${url}`,
+    html: layout(
+      "Your listing is paused",
+      paragraph(`Hi ${name},`) +
+        paragraph(`${scentName} has been taken off the marketplace for now: ${reason}`) +
+        paragraph("It will go live again automatically as soon as it's available. You don't need to do anything.") +
+        button("SELLER DASHBOARD", url),
+    ),
+  }),
+  listing_available: ({ name, scentName, url }) => ({
+    subject: `${scentName} is back on the marketplace`,
+    text: `Hi ${name},\n\nGood news: ${scentName} is available again and back on the marketplace. ${url}`,
+    html: layout(
+      "Your listing is back",
+      paragraph(`Hi ${name},`) + paragraph(`Good news: ${scentName} is available again and back on the marketplace.`) + button("VIEW YOUR LISTING", url),
     ),
   }),
   test_email: ({ sentBy }) => ({
