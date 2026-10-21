@@ -2,6 +2,7 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import { listActiveBottleOptions, listActiveIngredients } from "./dal/catalog";
+import { listMarketplace } from "./dal/marketplace";
 import { listShopProducts } from "./dal/products";
 import { listShippingZones } from "./checkout/shipping";
 import { getPublicSettings } from "./settings";
@@ -10,6 +11,7 @@ export const CACHE_TAGS = {
   catalog: "catalog",
   settings: "settings",
   products: "products",
+  marketplace: "marketplace",
 } as const;
 
 export async function getMixerCatalog() {
@@ -43,6 +45,14 @@ export async function getCachedShopProducts() {
   cacheTag(CACHE_TAGS.products);
   cacheLife("hours");
   return listShopProducts();
+}
+
+export async function getCachedMarketplace() {
+  "use cache";
+  // Buyer prices depend on ingredient prices and commission, so those changes refresh it too.
+  cacheTag(CACHE_TAGS.marketplace, CACHE_TAGS.catalog, CACHE_TAGS.settings);
+  cacheLife("hours");
+  return listMarketplace();
 }
 
 export type MixerCatalog = Awaited<ReturnType<typeof getMixerCatalog>>;

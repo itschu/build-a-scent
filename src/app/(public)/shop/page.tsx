@@ -53,7 +53,9 @@ function Chip({ href, active, children }: { href: string; active: boolean; child
 }
 
 async function Catalogue({ searchParams }: { searchParams: PageProps<"/shop">["searchParams"] }) {
-  const [products, params] = await Promise.all([getCachedShopProducts(), searchParams]);
+  // Request data first: cached database reads must never run during `next build`.
+  const params = await searchParams;
+  const products = await getCachedShopProducts();
   const filters = parseShopFilters(params);
   const families = [...new Set(products.map((p) => p.scentFamily))].sort();
   const shown = products.filter((p) => matchesFilters(p, filters));
