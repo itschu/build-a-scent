@@ -1,0 +1,16 @@
+# Local Postgres matching Railway's major version. Creates `bas` (development) and `bas_test`.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: bas
+      POSTGRES_PASSWORD: bas
+      POSTGRES_DB: bas
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/create-test-db.sql:/docker-entrypoint-initdb.d/create-test-db.sql:ro
+
+volumes:
+  postgres-data:

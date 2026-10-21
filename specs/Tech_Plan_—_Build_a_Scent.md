@@ -293,7 +293,7 @@ classDiagram
     class orders {
         uuid id PK
         uuid user_id FK
-        string guest_email
+        string email
         string order_number
         string status
         boolean needs_attention
@@ -394,7 +394,7 @@ classDiagram
 
 **`profiles`.** One row per user, created in the same transaction as sign-up via a Better Auth `databaseHooks.user.create.after` hook. `display_name` is the only identity field shown publicly (marketplace creator name). `full_name`, phone and address are private.
 
-**`saved_scents.formula`.** JSONB array `[{ ingredient_id, tier }]`, with 1–3 entries per tier for `saved` scents. Drafts may be partial (0–3 per tier). It is validated in the DAL with a Zod schema.
+**`saved_scents.formula`.** JSONB array `[{ ingredientId, tier }]`, with 1–3 entries per tier for `saved` scents. Drafts may be partial (0–3 per tier). It is validated in the DAL with a Zod schema.
 
 **`saved_scents.formula_hash`.** SHA-256 of the canonical formula (see Decision 9). It is indexed and computed only for complete formulas.
 
@@ -422,7 +422,7 @@ classDiagram
 
 **`products.slug`.** Unique, used by `/shop/[slug]`. `products.notes` is `{ base: string[], heart: string[], top: string[] }`, free text for pre-made products.
 
-**`orders.order_number`.** Human-friendly, unique, non-sequential (e.g. `BAS-7K3M9Q`). It is used with `guest_email` for guest lookup.
+**`orders.order_number`.** Human-friendly, unique, non-sequential (e.g. `BAS-7K3M9Q`). It is used with `orders.email` for guest lookup. `email` is the contact address for every order (guest or logged-in), so confirmation emails always have a recipient.
 
 **`orders.status`.** One of `pending_payment`, `verifying_payment`, `payment_failed`, `expired`, `paid`, `in_production`, `shipped`, `fulfilled`, `cancelled`, `refunded`. Transitions follow the diagram in Decision 19 and are enforced by guarded updates. `needs_attention` + `attention_reason` flag exceptional cases (amount mismatch, late payment after reservation expiry, stock conflict) for the admin queue.
 
