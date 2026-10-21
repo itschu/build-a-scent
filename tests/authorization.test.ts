@@ -12,12 +12,6 @@ describe("authorization rules", () => {
     it.todo("admins can read all scents");
   });
 
-  describe("marketplace_listings (T7, T8)", () => {
-  });
-
-  describe("orders and order_items (T5)", () => {
-  });
-
   describe("system data (T5, T9, T11)", () => {
     it.todo("only the system writes reservations, ledger entries, notifications, webhook events and outbox rows");
     it.todo("sellers can read only their own ledger entries");
