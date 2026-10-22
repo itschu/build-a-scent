@@ -1,8 +1,11 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { requireEnv } from "@/env";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { env } from "@/env";
+
+// Uploaded images live on disk under UPLOADS_DIR (a Railway volume in production) and are
+// served back by the app at /uploads/<key>.
 
 export const UPLOAD_PREFIXES = ["ingredients", "products", "bottles"] as const;
 export type UploadPrefix = (typeof UPLOAD_PREFIXES)[number];
@@ -13,56 +16,53 @@ const ALLOWED_TYPES: Record<string, string> = {
   "image/webp": "webp",
   "image/avif": "avif",
 };
+const CONTENT_TYPES = Object.fromEntries(Object.entries(ALLOWED_TYPES).map(([type, ext]) => [ext, type]));
+
+// Keys are always generated here, so anything else (including "../") is rejected when serving.
+const KEY_PATTERN = new RegExp(
+  `^(?:${UPLOAD_PREFIXES.join("|")})/[0-9a-f-]{36}\\.(${Object.values(ALLOWED_TYPES).join("|")})$`,
+);
 
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-const PRESIGN_TTL_SECONDS = 300;
 
-let client: S3Client | undefined;
-
-function s3(): S3Client {
-  client ??= new S3Client({
-    endpoint: requireEnv("S3_ENDPOINT"),
-    region: requireEnv("S3_REGION"),
-    forcePathStyle: true,
-    credentials: {
-      accessKeyId: requireEnv("S3_ACCESS_KEY_ID"),
-      secretAccessKey: requireEnv("S3_SECRET_ACCESS_KEY"),
-    },
-  });
-  return client;
+function uploadsDir(): string {
+  return path.resolve(/* turbopackIgnore: true */ env().UPLOADS_DIR ?? "uploads");
 }
 
 export function publicUrlFor(key: string): string {
-  return `${requireEnv("S3_PUBLIC_BASE_URL").replace(/\/$/, "")}/${key}`;
+  return `${env().APP_URL.replace(/\/$/, "")}/uploads/${key}`;
 }
 
 export class UploadValidationError extends Error {}
 
 /**
- * Presigned PUT for a direct browser upload. The signature pins the content type and length,
- * so the client cannot upload something other than what was validated here.
+ * Stores one uploaded image and returns its public URL.
  * Callers must authorize the actor (admin-only) before calling this.
  */
-export async function createPresignedUpload(input: {
+export async function saveUpload(input: {
   prefix: UploadPrefix;
-  contentType: string;
-  contentLength: number;
-}): Promise<{ uploadUrl: string; key: string; publicUrl: string }> {
-  const extension = ALLOWED_TYPES[input.contentType];
+  file: Blob;
+}): Promise<{ key: string; publicUrl: string }> {
+  const extension = ALLOWED_TYPES[input.file.type];
   if (!extension) throw new UploadValidationError("Unsupported image type");
-  if (!(input.contentLength > 0 && input.contentLength <= MAX_UPLOAD_BYTES)) {
+  if (!(input.file.size > 0 && input.file.size <= MAX_UPLOAD_BYTES)) {
     throw new UploadValidationError("Images must be 5 MB or smaller");
   }
   const key = `${input.prefix}/${randomUUID()}.${extension}`;
-  const uploadUrl = await getSignedUrl(
-    s3(),
-    new PutObjectCommand({
-      Bucket: requireEnv("S3_BUCKET"),
-      Key: key,
-      ContentType: input.contentType,
-      ContentLength: input.contentLength,
-    }),
-    { expiresIn: PRESIGN_TTL_SECONDS, signableHeaders: new Set(["content-type"]) },
-  );
-  return { uploadUrl, key, publicUrl: publicUrlFor(key) };
+  const target = path.join(uploadsDir(), key);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, Buffer.from(await input.file.arrayBuffer()), { flag: "wx" });
+  return { key, publicUrl: publicUrlFor(key) };
+}
+
+/** Reads a stored image, or null when the key is malformed or the file doesn't exist. */
+export async function readUpload(key: string): Promise<{ body: Buffer; contentType: string } | null> {
+  const match = KEY_PATTERN.exec(key);
+  if (!match) return null;
+  try {
+    return { body: await readFile(path.join(uploadsDir(), key)), contentType: CONTENT_TYPES[match[1]] };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
 }

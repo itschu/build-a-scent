@@ -20,17 +20,11 @@ const features = z.object({
   PAYSTACK_SECRET_KEY: z.string().min(1),
   FLUTTERWAVE_SECRET_KEY: z.string().min(1),
   FLUTTERWAVE_WEBHOOK_HASH: z.string().min(1),
-  SMTP_HOST: z.string().min(1),
-  SMTP_PORT: z.coerce.number().int().positive(),
-  SMTP_USER: z.string().min(1),
-  SMTP_PASS: z.string().min(1),
+  RESEND_API_KEY: z.string().min(1),
+  // Must use a domain verified in Resend, e.g. "Build a Scent <hello@yourdomain.com>".
   EMAIL_FROM: z.string().min(1),
-  S3_ENDPOINT: z.url(),
-  S3_REGION: z.string().min(1).default("auto"),
-  S3_BUCKET: z.string().min(1),
-  S3_ACCESS_KEY_ID: z.string().min(1),
-  S3_SECRET_ACCESS_KEY: z.string().min(1),
-  S3_PUBLIC_BASE_URL: z.url(),
+  // Where uploaded images are stored: the mount path of the Railway volume.
+  UPLOADS_DIR: z.string().min(1),
 });
 
 const schema = core.extend(features.partial().shape);

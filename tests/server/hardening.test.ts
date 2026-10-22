@@ -33,7 +33,7 @@ describe.skipIf(!testDatabaseUrl)("launch hardening", () => {
     catalog = await loadCatalog(conn.db);
     setEmailTransportForTests({
       sendMail: async (m: { subject: string }) => {
-        if (sendFails) throw new Error("SMTP down");
+        if (sendFails) throw new Error("Resend down");
         sent.push(m.subject);
         return {};
       },

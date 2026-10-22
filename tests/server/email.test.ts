@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { Transporter } from "nodemailer";
+import type { EmailTransport } from "@/server/email";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { getDb } from "@/server/db";
 import { deliverEmail, queueEmail, setEmailTransportForTests } from "@/server/email";
@@ -12,11 +12,11 @@ function capturingTransport(fail = false) {
   const sent: Array<{ to: string; subject: string }> = [];
   const transport = {
     sendMail: async (mail: { to: string; subject: string }) => {
-      if (fail) throw new Error("SMTP down");
+      if (fail) throw new Error("Resend down");
       sent.push({ to: mail.to, subject: mail.subject });
       return {};
     },
-  } as unknown as Transporter;
+  } as unknown as EmailTransport;
   return { transport, sent };
 }
 
@@ -59,7 +59,7 @@ describe.skipIf(!testDatabaseUrl)("email outbox", () => {
     const id = await queueEmail(getDb(), { ...input, dedupeKey: "fails" });
     expect(await deliverEmail(id!)).toBe("failed");
     const [row] = await conn.db.select().from(conn.schema.emailOutbox).where(eq(conn.schema.emailOutbox.id, id!));
-    expect(row).toMatchObject({ status: "failed", attempts: 1, lastError: "SMTP down" });
+    expect(row).toMatchObject({ status: "failed", attempts: 1, lastError: "Resend down" });
     expect(row.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
 
     const { transport, sent } = capturingTransport();

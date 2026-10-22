@@ -55,7 +55,7 @@ export function EmailDelivery({ undeliverable }: { undeliverable: Undeliverable[
                   const result = await retryEmailAction(e.id);
                   setPending(null);
                   if (!result.ok) return toast(result.error, { tone: "error" });
-                  toast(result.data === "sent" ? "Email sent." : "Still failing; check the SMTP settings.", { tone: result.data === "sent" ? "success" : "error" });
+                  toast(result.data === "sent" ? "Email sent." : "Still failing; check the Resend settings.", { tone: result.data === "sent" ? "success" : "error" });
                   router.refresh();
                 }}
               >

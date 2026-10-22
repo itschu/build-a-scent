@@ -8,19 +8,16 @@ import { Input } from "@/components/ui/field";
 type Prefix = "ingredients" | "products" | "bottles";
 
 async function uploadFile(file: File, prefix: Prefix): Promise<string> {
-  const presign = await fetch("/api/uploads/presign", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prefix, contentType: file.type, contentLength: file.size }),
-  });
-  const body = (await presign.json()) as { uploadUrl?: string; publicUrl?: string; error?: string };
-  if (!presign.ok || !body.uploadUrl || !body.publicUrl) throw new Error(body.error ?? "Upload failed");
-  const put = await fetch(body.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
-  if (!put.ok) throw new Error("The storage service rejected the upload");
+  const form = new FormData();
+  form.set("prefix", prefix);
+  form.set("file", file);
+  const res = await fetch("/api/uploads", { method: "POST", body: form });
+  const body = (await res.json().catch(() => ({}))) as { publicUrl?: string; error?: string };
+  if (!res.ok || !body.publicUrl) throw new Error(body.error ?? "Upload failed");
   return body.publicUrl;
 }
 
-/** Ordered list of image URLs: upload to object storage, or paste a URL. */
+/** Ordered list of image URLs: upload to image storage, or paste a URL. */
 export function ImageListEditor({
   value,
   onChange,

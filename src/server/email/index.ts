@@ -1,34 +1,47 @@
 import "server-only";
 import { and, eq, inArray, lte } from "drizzle-orm";
-import nodemailer, { type Transporter } from "nodemailer";
+import { Resend } from "resend";
 import { env } from "@/env";
 import { getDb, schema, type Db, type Tx } from "@/server/db";
 import { isEmailTemplate, renderEmail, type EmailPayload, type EmailTemplate } from "./templates";
 
 export const MAX_ATTEMPTS = 6;
 
-let transporter: Transporter | undefined;
+export type OutgoingEmail = { from: string; to: string; subject: string; text: string; html: string };
 
-function getTransporter(): Transporter {
-  if (transporter) return transporter;
-  const e = env();
-  if (e.SMTP_HOST && e.SMTP_PORT && e.SMTP_USER && e.SMTP_PASS) {
-    transporter = nodemailer.createTransport({
-      host: e.SMTP_HOST,
-      port: e.SMTP_PORT,
-      secure: e.SMTP_PORT === 465,
-      auth: { user: e.SMTP_USER, pass: e.SMTP_PASS },
-    });
+/** Sends one email; throws on failure so the outbox records the error and retries. */
+export interface EmailTransport {
+  sendMail(mail: OutgoingEmail): Promise<unknown>;
+}
+
+let transport: EmailTransport | undefined;
+
+function getTransport(): EmailTransport {
+  if (transport) return transport;
+  const apiKey = env().RESEND_API_KEY;
+  if (apiKey) {
+    const resend = new Resend(apiKey);
+    transport = {
+      async sendMail(mail) {
+        // The SDK reports API errors in the result instead of throwing.
+        const { error } = await resend.emails.send(mail);
+        if (error) throw new Error(`Resend: ${error.message}`);
+      },
+    };
   } else {
-    // Development without SMTP: emails are logged instead of sent (production requires SMTP).
-    transporter = nodemailer.createTransport({ jsonTransport: true });
+    // Development without Resend: emails are logged instead of sent (production requires Resend).
+    transport = {
+      async sendMail(mail) {
+        console.info(`[email] ${mail.subject} → ${mail.to}\n${mail.text}`);
+      },
+    };
   }
-  return transporter;
+  return transport;
 }
 
 /** Testing hook: replace the transport (e.g. with a capturing one). */
-export function setEmailTransportForTests(t: Transporter | undefined) {
-  transporter = t;
+export function setEmailTransportForTests(t: EmailTransport | undefined) {
+  transport = t;
 }
 
 /**
@@ -82,16 +95,13 @@ export async function deliverEmail(id: string): Promise<"sent" | "failed" | "ski
   try {
     if (!isEmailTemplate(claimed.template)) throw new Error(`Unknown template ${claimed.template}`);
     const rendered = renderEmail(claimed.template, claimed.payload as never);
-    const info = await getTransporter().sendMail({
+    await getTransport().sendMail({
       from: env().EMAIL_FROM ?? "Build a Scent <no-reply@localhost>",
       to: claimed.toEmail,
       subject: rendered.subject,
       text: rendered.text,
       html: rendered.html,
     });
-    if (env().NODE_ENV === "development" && "message" in info) {
-      console.info(`[email] ${claimed.template} → ${claimed.toEmail}\n${rendered.text}`);
-    }
     await db
       .update(schema.emailOutbox)
       .set({ status: "sent", sentAt: new Date(), lastError: null })

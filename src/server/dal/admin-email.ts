@@ -43,7 +43,7 @@ export async function retryUndeliverableEmail(actor: Actor, id: string): Promise
   return deliverEmail(id);
 }
 
-/** Sends a test email to the admin, synchronously, so SMTP problems show up immediately. */
+/** Sends a test email to the admin, synchronously, so delivery problems (e.g. a bad Resend key or unverified sender) show up immediately. */
 export async function sendTestEmail(actor: Actor, to: string): Promise<void> {
   assertAdmin(actor);
   const dedupeKey = `test_email:${actor.userId}:${Date.now()}`;

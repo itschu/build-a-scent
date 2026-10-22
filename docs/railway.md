@@ -8,7 +8,7 @@ network.
 | **app** | this repo (`railway.json`) | Next.js server. Runs `pnpm db:migrate` before each deploy, then `pnpm start`; health check `/api/health` |
 | **Postgres** | Railway Postgres template | Primary database. Turn on daily backups in the service's Backups tab |
 | **jobs** | this repo, cron schedule `*/5 * * * *` | Background jobs (`pnpm jobs:run`): release expired stock holds, expire abandoned orders, re-verify stuck payments, retry emails, prune rate limits |
-| **Bucket** | Railway Storage Bucket (or Cloudflare R2) | Uploaded images, publicly readable |
+| **Volume** | Railway volume attached to the app, mounted at `/data` | Uploaded images, served by the app at `/uploads/...` |
 
 ## First deploy
 
@@ -17,7 +17,7 @@ network.
    - `DATABASE_URL` → `${{Postgres.DATABASE_URL}}` (the private-network URL)
    - `APP_URL` and `BETTER_AUTH_URL` → the app's public URL
    - `BETTER_AUTH_SECRET` and `CHECKOUT_CONTEXT_SECRET` → `openssl rand -base64 32` each
-   - Google, Paystack, Flutterwave, SMTP and `S3_*` credentials. The server refuses to start in production if any are missing.
+   - Google, Paystack, Flutterwave, Resend (`RESEND_API_KEY`, `EMAIL_FROM`) credentials, and `UPLOADS_DIR=/data`. The server refuses to start in production if any are missing.
 3. Deploy. Migrations run automatically before the new version starts.
 4. Seed once: from a machine with the Railway CLI, run
    `railway run --service app -- sh -c 'DATABASE_URL=$DATABASE_PUBLIC_URL pnpm db:seed'`
@@ -25,12 +25,12 @@ network.
 5. Sign up on the site with the owner's email, then promote that account the same way:
    `... pnpm admin:promote --email owner@example.com`.
 
-## Object storage
+## Image storage
 
-Create a bucket with public read access and set `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
-`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_PUBLIC_BASE_URL` (the base URL images are
-served from). Allow `PUT` from the app's origin in the bucket's CORS settings so admins can
-upload images directly from the browser.
+Admin uploads are written to a Railway volume attached to the app service
+(`railway volume add --mount-path /data`) and served by the app at `/uploads/<key>`.
+Set `UPLOADS_DIR=/data` on the app service. A volume belongs to one service, so the app
+must run as a single replica.
 
 ## Schema changes
 
@@ -44,7 +44,7 @@ Edit `src/server/db/schema`, run `pnpm db:generate --name <change>`, review the 
    `*/5 * * * *`. Remove the health check and pre-deploy command for this service (the app
    service already runs migrations).
 3. Variables: share the app service's variables (at minimum `DATABASE_URL`, `APP_URL`,
-   `NODE_ENV=production`, gateway secrets and SMTP), e.g. `${{app.PAYSTACK_SECRET_KEY}}`.
+   `NODE_ENV=production`, gateway secrets, `RESEND_API_KEY` and `EMAIL_FROM`), e.g. `${{app.PAYSTACK_SECRET_KEY}}`.
 
 Each run executes every job once, prints a one-line JSON summary, and exits non-zero if any
 job failed. Jobs claim rows with `FOR UPDATE SKIP LOCKED`, so overlapping runs are safe.

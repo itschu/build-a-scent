@@ -19,7 +19,7 @@ pnpm db:seed --sample         # settings, bottle options, shipping zones + sampl
 pnpm dev
 ```
 
-Integration variables (Google, Paystack, Flutterwave, SMTP, storage) are optional locally
+Integration variables (Google, Paystack, Flutterwave, Resend, upload storage) are optional locally
 and required in production; the server refuses to start without them.
 
 ### Payments locally

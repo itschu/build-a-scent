@@ -40,6 +40,6 @@ describe("env", () => {
 
   it("fails loudly when an unconfigured feature is used", async () => {
     const { requireEnv } = await loadEnv(core);
-    expect(() => requireEnv("SMTP_HOST")).toThrow(/SMTP_HOST is not configured/);
+    expect(() => requireEnv("RESEND_API_KEY")).toThrow(/RESEND_API_KEY is not configured/);
   });
 });
