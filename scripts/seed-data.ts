@@ -36,7 +36,8 @@ const SHIPPING_ZONES = [
   },
 ];
 
-// Development catalogue; prices are per ml of pure ingredient.
+// Starter ingredient catalogue (also loaded in production with --ingredients); prices are
+// per ml of pure ingredient and editable in the admin panel.
 const SAMPLE_INGREDIENTS: Array<[string, NoteTier, string, string, number]> = [
   ["Sandalwood", "base", "Woody", "#8b5a2b", 800],
   ["Musk", "base", "Musky", "#d8c8b8", 600],
@@ -96,7 +97,7 @@ const SAMPLE_PRODUCTS = [
  * Idempotent seed. Existing rows are never overwritten, so it is safe to re-run against a
  * database an admin has already edited (only each setting's public flag is kept in sync).
  */
-export async function seed(db: ScriptDb, options: { sampleData: boolean }) {
+export async function seed(db: ScriptDb, options: { sampleData: boolean; ingredients?: boolean }) {
   await db
     .insert(schema.platformSettings)
     .values(
@@ -120,7 +121,7 @@ export async function seed(db: ScriptDb, options: { sampleData: boolean }) {
 
   await db.insert(schema.shippingZones).values(SHIPPING_ZONES).onConflictDoNothing();
 
-  if (options.sampleData) {
+  if (options.sampleData || options.ingredients) {
     await db
       .insert(schema.ingredients)
       .values(
@@ -133,7 +134,9 @@ export async function seed(db: ScriptDb, options: { sampleData: boolean }) {
         })),
       )
       .onConflictDoNothing();
+  }
 
+  if (options.sampleData) {
     for (const { variants, ...product } of SAMPLE_PRODUCTS) {
       const [created] = await db.insert(schema.products).values(product).onConflictDoNothing().returning({ id: schema.products.id });
       if (created) await db.insert(schema.productVariants).values(variants.map((v) => ({ ...v, productId: created.id })));

@@ -23,6 +23,7 @@ network. Service settings (build, start, pre-deploy, health check, cron, volume)
 3. Deploy. Migrations run automatically before the new version starts.
 4. Seed once, inside the running app container (the database URL only resolves on
    Railway's private network): `railway ssh --service build-a-scent -- pnpm db:seed`.
+   Add `--ingredients` to also load the starter ingredient catalogue (no demo products).
 5. Sign up on the site with the owner's email, then promote that account the same way:
    `railway ssh --service build-a-scent -- pnpm admin:promote --email owner@example.com`.
 
