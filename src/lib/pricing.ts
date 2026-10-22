@@ -1,6 +1,6 @@
 // Pricing rules from the Tech Plan (Decisions 7 and 8). Pure functions shared by client and
 // server; the server result is authoritative. All amounts are integer kobo.
-import { countByTier, type Formula } from "./formula";
+import { countByTier, isProportioned, type Formula } from "./formula";
 import { NOTE_TIERS, type NoteTier } from "./domain";
 
 export type TierShares = Record<NoteTier, number>;
@@ -30,11 +30,22 @@ function ceilDiv(numerator: bigint, denominator: bigint): bigint {
 }
 
 /**
+ * Each ingredient's share of the blend in percent. Proportioned formulas carry their own
+ * amounts; older formulas split each tier's platform share equally (so may be fractional).
+ */
+export function entryPercents(formula: Formula, shares: TierShares): Map<string, number> {
+  if (isProportioned(formula)) return new Map(formula.map((e) => [e.ingredientId, e.pct!]));
+  const counts = countByTier(formula);
+  return new Map(formula.map((e) => [e.ingredientId, shares[e.tier] / counts[e.tier]]));
+}
+
+/**
  * Cost of the ingredients in a bottle, rounded up to a whole naira.
  *
- * concentrate_ml = volume_ml × concentration_pct / 100. Each tier gets tier_share% of the
- * concentrate, split equally between its ingredients. The sum is computed exactly with
- * integers and rounded once at the end.
+ * concentrate_ml = volume_ml × concentration_pct / 100. Each ingredient gets its pct of the
+ * concentrate; older formulas without amounts give each tier tier_share% of the concentrate,
+ * split equally between its ingredients. The sum is computed exactly with integers and
+ * rounded once at the end.
  */
 export function ingredientCostKobo(
   formula: Formula,
@@ -43,6 +54,20 @@ export function ingredientCostKobo(
   shares: TierShares,
 ): number {
   assertValidTierShares(shares);
+  if (isProportioned(formula)) {
+    const denominator = 100n * 100n;
+    let numerator = 0n;
+    for (const entry of formula) {
+      const ingredient = ingredients.get(entry.ingredientId);
+      if (!ingredient) throw new Error(`Unknown ingredient ${entry.ingredientId}`);
+      numerator +=
+        BigInt(ingredient.pricePerMlKobo) *
+        BigInt(bottle.volumeMl) *
+        BigInt(bottle.concentrationPct) *
+        BigInt(entry.pct!);
+    }
+    return Number(ceilDiv(numerator, denominator * KOBO_PER_NAIRA) * KOBO_PER_NAIRA);
+  }
   const counts = countByTier(formula);
   // Common denominator: 100 (concentration) × 100 (share) × 6 (lcm of 1, 2, 3 ingredients per tier).
   const lcm = 6n;

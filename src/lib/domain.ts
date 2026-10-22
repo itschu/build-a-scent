@@ -61,5 +61,10 @@ export const EMAIL_STATUSES = ["pending", "sent", "failed"] as const;
 export type EmailStatus = (typeof EMAIL_STATUSES)[number];
 
 export const MAX_INGREDIENTS_PER_TIER = 3;
+/** Blend proportions move in 5% steps: one "pour" in the mixer. */
+export const POUR_STEP_PCT = 5;
+/** Guard rails so every blend wears well: each note tier is 10–70% of the bottle. */
+export const TIER_MIN_PCT = 10;
+export const TIER_MAX_PCT = 70;
 export const LISTING_DESCRIPTION_MAX = 200;
 export const MAX_FEATURED_NOTES = 3;

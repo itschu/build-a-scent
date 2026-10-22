@@ -5,7 +5,16 @@ import type { NoteProfile } from "./note-profile";
 import type { MarketplaceSplit } from "./pricing";
 
 export type SnapshotBottle = { id: string; label: string; volumeMl: number; format: BottleFormat };
-export type SnapshotIngredient = { ingredientId: string; name: string; tier: NoteTier; colorHex: string };
+export type SnapshotIngredient = {
+  ingredientId: string;
+  name: string;
+  tier: NoteTier;
+  colorHex: string;
+  /** Share of the blend in percent, and the millilitres of it in this bottle's concentrate.
+   * Absent on orders placed before amounts were recorded. */
+  pct?: number;
+  ml?: number;
+};
 
 export type CustomScentSnapshot = {
   type: "custom_scent";

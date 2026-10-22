@@ -1,65 +1,143 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { MAX_INGREDIENTS_PER_TIER } from "@/lib/domain";
+import { useEffect, useRef } from "react";
+import { POUR_STEP_PCT } from "@/lib/domain";
 import { cn } from "@/lib/cn";
 import type { CatalogIngredient } from "@/server/dal/catalog";
 
 export const BOTTLE_DROP_ID = "bottle";
 
-export function BottleDropZone({
-  selected,
-  onRemove,
+const HOLD_DELAY_MS = 350;
+const HOLD_REPEAT_MS = 180;
+
+/**
+ * The bottle as a pour target: tap to pour one measure from the picked vial, hold to keep
+ * pouring. Vials can also be dropped onto it.
+ */
+export function PourTarget({
+  pickedName,
+  canPour,
+  onPour,
+  children,
 }: {
-  selected: CatalogIngredient[];
-  onRemove: (ingredientId: string) => void;
+  pickedName: string | null;
+  canPour: boolean;
+  onPour: () => void;
+  children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: BOTTLE_DROP_ID });
-  const full = selected.length >= MAX_INGREDIENTS_PER_TIER;
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const held = useRef(false);
+  const pour = useRef(onPour);
+  useEffect(() => {
+    pour.current = onPour;
+  }, [onPour]);
+
+  function stop() {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  }
+
+  function start() {
+    held.current = false;
+    if (!canPour) return;
+    const repeat = () => {
+      held.current = true;
+      pour.current();
+      timer.current = setTimeout(repeat, HOLD_REPEAT_MS);
+    };
+    timer.current = setTimeout(repeat, HOLD_DELAY_MS);
+  }
+
+  useEffect(() => stop, []);
 
   return (
-    <div
+    <button
       ref={setNodeRef}
+      type="button"
+      aria-disabled={!canPour || undefined}
+      aria-label={
+        pickedName ? `Pour ${pickedName} into the bottle (${POUR_STEP_PCT}%)` : "Your blend. Pick an ingredient, then tap here to pour"
+      }
+      onPointerDown={start}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+      onContextMenu={(e) => e.preventDefault()}
+      onClick={() => {
+        // A hold already poured; the click that ends it shouldn't pour again.
+        if (!held.current && canPour) onPour();
+        held.current = false;
+      }}
       className={cn(
-        "border border-dashed px-4 py-4 transition-colors",
-        isOver ? (full ? "border-danger/60 bg-danger/5" : "border-gold bg-gold/5") : "border-line",
+        "block w-full touch-manipulation select-none rounded-3xl transition-shadow focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold",
+        canPour ? "cursor-pointer" : "cursor-default",
+        (isOver || (pickedName && canPour)) && "shadow-[0_0_60px_rgba(201,168,76,0.25)]",
       )}
     >
-      <p className="mb-3 text-center font-serif text-[0.7rem] uppercase tracking-label text-muted" aria-live="polite">
-        {full
-          ? `Tier full · ${MAX_INGREDIENTS_PER_TIER} of ${MAX_INGREDIENTS_PER_TIER}`
-          : `Drag ingredients here · ${selected.length} selected · max ${MAX_INGREDIENTS_PER_TIER}`}
-      </p>
-      {selected.length > 0 && (
-        <ul className="flex flex-wrap justify-center gap-2">
-          {selected.map((ingredient) => (
-            <li key={ingredient.id}>
-              <button
-                type="button"
-                onClick={() => onRemove(ingredient.id)}
-                aria-label={`Remove ${ingredient.name}`}
-                className="flex items-center gap-2 border border-gold-dim bg-raised px-3 py-1.5 text-xs text-champagne hover:border-danger/60"
-              >
-                <span className="size-3 rounded-full" style={{ backgroundColor: ingredient.colorHex }} aria-hidden />
-                {ingredient.name}
-                <span className="text-muted" aria-hidden>
-                  ×
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+      {children}
+    </button>
   );
 }
 
-/** Lets ingredients be dropped straight onto the bottle illustration as well. */
-export function DroppableBottle({ children }: { children: React.ReactNode }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `${BOTTLE_DROP_ID}-visual` });
+/** What's in the bottle, with fine-tuning: − pours a measure back, + pours another. */
+export function PourList({
+  items,
+  pourBlocker,
+  onPour,
+  onPourBack,
+  onRemove,
+  className,
+}: {
+  items: Array<{ ingredient: CatalogIngredient; amount: number }>;
+  pourBlocker: (ingredientId: string) => string | null;
+  onPour: (ingredientId: string) => void;
+  onPourBack: (ingredientId: string) => void;
+  onRemove: (ingredientId: string) => void;
+  className?: string;
+}) {
+  if (items.length === 0) return null;
   return (
-    <div ref={setNodeRef} className={cn("rounded-3xl transition-shadow", isOver && "shadow-[0_0_60px_rgba(201,168,76,0.25)]")}>
-      {children}
-    </div>
+    <ul className={cn("space-y-1.5", className)}>
+      {items.map(({ ingredient, amount }) => {
+        const blocked = pourBlocker(ingredient.id);
+        return (
+          <li key={ingredient.id} className="flex items-center gap-2 border border-line bg-raised px-2.5 py-1.5 text-xs">
+            <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: ingredient.colorHex }} aria-hidden />
+            <span className="min-w-0 flex-1 truncate text-champagne">{ingredient.name}</span>
+            <button
+              type="button"
+              onClick={() => onPourBack(ingredient.id)}
+              aria-label={`Pour back ${POUR_STEP_PCT}% of ${ingredient.name}`}
+              className="size-6 border border-line text-muted hover:border-gold-dim hover:text-gold"
+            >
+              −
+            </button>
+            <span className="w-9 text-center tabular-nums text-gold" aria-live="polite">
+              {amount}%
+            </span>
+            <button
+              type="button"
+              onClick={() => onPour(ingredient.id)}
+              disabled={Boolean(blocked)}
+              title={blocked ?? undefined}
+              aria-label={`Pour ${POUR_STEP_PCT}% more ${ingredient.name}`}
+              className="size-6 border border-line text-muted hover:border-gold-dim hover:text-gold disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={() => onRemove(ingredient.id)}
+              aria-label={`Remove ${ingredient.name}`}
+              className="ml-1 text-muted hover:text-danger"
+            >
+              ×
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

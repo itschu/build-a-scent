@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { MixerWizard } from "@/components/mixer/mixer-wizard";
-import { selectionsFromFormula, type MixerSnapshot } from "@/lib/mixer/state";
+import { amountsFromFormula, selectionsFromFormula, type MixerSnapshot } from "@/lib/mixer/state";
+import { tierSharesFrom } from "@/lib/settings";
 import { getActor } from "@/server/auth/session";
 import { getMixerCatalog, type MixerCatalog } from "@/server/cached";
 import { NotFoundError } from "@/server/dal/actor";
@@ -37,7 +38,7 @@ async function MixerLoader({ searchParams }: { searchParams: PageProps<"/build">
     : fromId
       ? await loadOwnScent(catalog, fromId, "edit")
       : shareToken
-        ? await loadSharedScent(shareToken)
+        ? await loadSharedScent(catalog, shareToken)
         : {};
 
   return <MixerWizard catalog={catalog} initialSnapshot={initial.snapshot} initialNotice={initial.notice} />;
@@ -69,8 +70,14 @@ async function loadOwnScent(catalog: MixerCatalog, id: string, mode: "draft" | "
         ? { draftId: scent.id, step: scent.currentStep ?? "base" }
         : { parentScentId: scent.status === "saved" ? scent.id : null, step: "preview" };
     return {
-      snapshot: { ...snapshot, selections: selectionsFromFormula(formula), name: scent.name ?? "", bottleOptionId },
-      notice: dropped ? "Some ingredients in this blend are no longer available and were removed." : undefined,
+      snapshot: {
+        ...snapshot,
+        selections: selectionsFromFormula(formula),
+        amounts: amountsFromFormula(formula, tierSharesFrom(catalog.settings)),
+        name: scent.name ?? "",
+        bottleOptionId,
+      },
+      notice: dropped ? "Some ingredients in this blend are no longer available and were removed. Top up the bottle to finish it." : undefined,
     };
   } catch (error) {
     if (error instanceof NotFoundError) return { notice: "We couldn't find that scent, so you're starting fresh." };
@@ -79,13 +86,18 @@ async function loadOwnScent(catalog: MixerCatalog, id: string, mode: "draft" | "
 }
 
 /** "Build your own" from a shared scent: the viewer starts from a copy of the formula. */
-async function loadSharedScent(token: string): Promise<Initial> {
+async function loadSharedScent(catalog: MixerCatalog, token: string): Promise<Initial> {
   const scent = await getSharedScent(token);
   if (!scent || scent.kind !== "formula" || !scent.availability.available) {
     return { notice: "That shared blend isn't available to copy, so you're starting fresh." };
   }
   return {
-    snapshot: { selections: selectionsFromFormula(scent.formula), bottleOptionId: scent.bottle?.id ?? null, step: "preview" },
+    snapshot: {
+      selections: selectionsFromFormula(scent.formula),
+      amounts: amountsFromFormula(scent.formula, tierSharesFrom(catalog.settings)),
+      bottleOptionId: scent.bottle?.id ?? null,
+      step: "preview",
+    },
     notice: `Starting from "${scent.name}". Make it your own, then save it to your library.`,
   };
 }

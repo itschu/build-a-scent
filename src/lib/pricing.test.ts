@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Formula } from "./formula";
 import {
   blendPriceKobo,
+  entryPercents,
   ingredientCostKobo,
   marketplaceSplit,
   type PricingBottleOption,
@@ -106,5 +107,39 @@ describe("marketplaceSplit", () => {
   it("rejects a non-positive markup or out-of-range commission", () => {
     expect(() => marketplaceSplit({ blendPriceKobo: 100, creatorMarkupKobo: 0, commissionPct: 20 })).toThrow();
     expect(() => marketplaceSplit({ blendPriceKobo: 100, creatorMarkupKobo: 100, commissionPct: 101 })).toThrow();
+  });
+});
+
+describe("proportioned blends", () => {
+  it("charges each ingredient for its own share of the concentrate", () => {
+    // 50 ml spray at 20% → 10 ml concentrate: 5 ml sandalwood, 2 ml rose, 1.5 ml jasmine, 1.5 ml bergamot.
+    const formula: Formula = [
+      { ingredientId: ids.sandalwood, tier: "base", pct: 50 },
+      { ingredientId: ids.rose, tier: "heart", pct: 20 },
+      { ingredientId: ids.jasmine, tier: "heart", pct: 15 },
+      { ingredientId: ids.bergamot, tier: "top", pct: 15 },
+    ];
+    expect(ingredientCostKobo(formula, catalog, spray50, shares)).toBe(naira(4_000 + 2_400 + 1_500 + 600));
+  });
+
+  it("prices the platform split the same with or without amounts", () => {
+    const legacy: Formula = [
+      { ingredientId: ids.sandalwood, tier: "base" },
+      { ingredientId: ids.rose, tier: "heart" },
+      { ingredientId: ids.bergamot, tier: "top" },
+    ];
+    const proportioned: Formula = legacy.map((e) => ({ ...e, pct: shares[e.tier] }));
+    expect(ingredientCostKobo(proportioned, catalog, spray50, shares)).toBe(ingredientCostKobo(legacy, catalog, spray50, shares));
+  });
+
+  it("reports each ingredient's share, splitting tiers equally for older formulas", () => {
+    expect(entryPercents(worked, shares)).toEqual(
+      new Map([
+        [ids.sandalwood, 40],
+        [ids.rose, 17.5],
+        [ids.jasmine, 17.5],
+        [ids.bergamot, 25],
+      ]),
+    );
   });
 });

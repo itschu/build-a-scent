@@ -1,21 +1,29 @@
 "use client";
 
-import { BottleVisual, type BottleLayers } from "@/components/scent/bottle-visual";
+import { BottleVisual, type BottleLayers, type BottleSegment } from "@/components/scent/bottle-visual";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { NOTE_TIERS, type NoteTier } from "@/lib/domain";
 import { TIER_LABELS } from "@/lib/labels";
-import type { MixerState } from "@/lib/mixer/state";
+import { blendBlocker, tierPct, type MixerState } from "@/lib/mixer/state";
 import { formatNaira } from "@/lib/money";
 import { SCENT_NAME_MAX } from "@/lib/validation/scent";
 import type { CatalogBottleOption, CatalogIngredient } from "@/server/dal/catalog";
 import { BottleOptionPicker } from "./bottle-option-picker";
+import { PourList } from "./drop-zone";
+
+type PourItem = { ingredient: CatalogIngredient; amount: number };
 
 export function MixerPreview({
   state,
-  byId,
   layers,
+  segments,
   shares,
+  pourItems,
+  pourBlocker,
+  onPour,
+  onPourBack,
+  onRemove,
   bottleOptions,
   priceKobo,
   nameError,
@@ -28,9 +36,14 @@ export function MixerPreview({
   onList,
 }: {
   state: MixerState;
-  byId: Map<string, CatalogIngredient>;
   layers: BottleLayers;
+  segments: BottleSegment[];
   shares: Record<NoteTier, number>;
+  pourItems: (tiers: readonly NoteTier[]) => PourItem[];
+  pourBlocker: (tier: NoteTier, ingredientId: string) => string | null;
+  onPour: (tier: NoteTier, ingredientId: string) => void;
+  onPourBack: (tier: NoteTier, ingredientId: string) => void;
+  onRemove: (tier: NoteTier, ingredientId: string) => void;
   bottleOptions: CatalogBottleOption[];
   priceKobo: number | null;
   nameError: string | null;
@@ -42,10 +55,17 @@ export function MixerPreview({
   onSave: () => void;
   onList: () => void;
 }) {
+  const blocker = blendBlocker(state);
   return (
     <div className="mt-6 grid gap-10 xl:grid-cols-[220px_1fr]">
       <div className="hidden xl:block">
-        <BottleVisual layers={layers} shares={shares} className="mx-auto h-80" label={state.name || "Your blend"} />
+        <BottleVisual
+          layers={layers}
+          shares={shares}
+          segments={segments}
+          className="mx-auto h-80"
+          label={state.name || "Your blend"}
+        />
       </div>
 
       <div className="space-y-8">
@@ -66,26 +86,31 @@ export function MixerPreview({
 
         <div className="border border-line">
           <p className="border-b border-line px-4 py-3 font-serif text-[0.7rem] uppercase tracking-label text-gold">
-            Your notes
+            Your blend · fine-tune the amounts
           </p>
           <dl className="divide-y divide-line-soft">
             {NOTE_TIERS.map((tier) => (
-              <div key={tier} className="flex gap-4 px-4 py-3">
-                <dt className="w-16 shrink-0 font-serif text-xs uppercase tracking-label text-muted">{TIER_LABELS[tier]}</dt>
-                <dd className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-champagne">
-                  {state.selections[tier].map((id) => {
-                    const ingredient = byId.get(id);
-                    return ingredient ? (
-                      <span key={id} className="flex items-center gap-1.5">
-                        <span className="size-2.5 rounded-full" style={{ backgroundColor: ingredient.colorHex }} aria-hidden />
-                        {ingredient.name}
-                      </span>
-                    ) : null;
-                  })}
+              <div key={tier} className="grid gap-2 px-4 py-3 sm:grid-cols-[88px_1fr] sm:gap-4">
+                <dt className="font-serif text-xs uppercase tracking-label text-muted sm:pt-2">
+                  {TIER_LABELS[tier]} <span className="text-gold">{tierPct(state, tier)}%</span>
+                </dt>
+                <dd>
+                  <PourList
+                    items={pourItems([tier])}
+                    pourBlocker={(id) => pourBlocker(tier, id)}
+                    onPour={(id) => onPour(tier, id)}
+                    onPourBack={(id) => onPourBack(tier, id)}
+                    onRemove={(id) => onRemove(tier, id)}
+                  />
                 </dd>
               </div>
             ))}
           </dl>
+          {blocker && (
+            <p className="border-t border-line px-4 py-3 text-sm text-danger" role="alert">
+              {blocker}
+            </p>
+          )}
         </div>
 
         <BottleOptionPicker options={bottleOptions} value={state.bottleOptionId} onChange={onBottleChange} />

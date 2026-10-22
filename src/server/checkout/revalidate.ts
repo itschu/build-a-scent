@@ -5,7 +5,7 @@ import { findFormulaIssues, type Formula } from "@/lib/formula";
 import { bottleLabel, FORMAT_LABELS } from "@/lib/labels";
 import { noteProfile } from "@/lib/note-profile";
 import type { ItemSnapshot, SnapshotBottle, SnapshotIngredient } from "@/lib/order-snapshot";
-import { blendPriceKobo, ingredientCostKobo, marketplaceSplit } from "@/lib/pricing";
+import { blendPriceKobo, entryPercents, ingredientCostKobo, marketplaceSplit, type TierShares } from "@/lib/pricing";
 import { tierSharesFrom, type SettingValues } from "@/lib/settings";
 import type { CheckoutLine } from "@/lib/validation/checkout";
 import { schema, type Tx } from "@/server/db";
@@ -36,10 +36,20 @@ function snapshotBottle(b: { id: string; sizeLabel: string; volumeMl: number; fo
   return { id: b.id, label: bottleLabel(b), volumeMl: b.volumeMl, format: b.format };
 }
 
-function snapshotFormula(formula: Formula, ingredients: ReadonlyMap<string, CatalogIngredient>): SnapshotIngredient[] {
+/** The formula as made: each ingredient's share of the blend and its ml of concentrate. */
+function snapshotFormula(
+  formula: Formula,
+  ingredients: ReadonlyMap<string, CatalogIngredient>,
+  bottle: { volumeMl: number; concentrationPct: number },
+  shares: TierShares,
+): SnapshotIngredient[] {
+  const percents = entryPercents(formula, shares);
+  const concentrateMl = (bottle.volumeMl * bottle.concentrationPct) / 100;
+  const round2 = (n: number) => Math.round(n * 100) / 100;
   return formula.map((e) => {
     const i = ingredients.get(e.ingredientId)!;
-    return { ingredientId: i.id, name: i.name, tier: e.tier, colorHex: i.colorHex };
+    const pct = percents.get(e.ingredientId)!;
+    return { ingredientId: i.id, name: i.name, tier: e.tier, colorHex: i.colorHex, pct: round2(pct), ml: round2((concentrateMl * pct) / 100) };
   });
 }
 
@@ -146,7 +156,7 @@ export async function revalidateCart(tx: Tx, lines: CheckoutLine[], settings: Se
           type: "custom_scent",
           name: line.name,
           bottle: snapshotBottle(bottle),
-          formula: snapshotFormula(line.formula, ingredients),
+          formula: snapshotFormula(line.formula, ingredients, bottle, shares),
           basePriceKobo: bottle.basePriceKobo,
           ingredientCostKobo: ingredientCostKobo(line.formula, ingredients, bottle, shares),
         },
@@ -171,7 +181,7 @@ export async function revalidateCart(tx: Tx, lines: CheckoutLine[], settings: Se
       });
       const issue = priceIssue(line, split.buyerPriceKobo, name);
       if (issue) issues.push(issue);
-      const formula = snapshotFormula(found.formula, ingredients);
+      const formula = snapshotFormula(found.formula, ingredients, bottle, shares);
       priced.push({
         key: line.key,
         itemType: "marketplace_listing",

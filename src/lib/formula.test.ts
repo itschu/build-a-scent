@@ -73,3 +73,55 @@ describe("formula hashing", () => {
     expect(await formulaHash(complete)).toMatch(/^[0-9a-f]{64}$/);
   });
 });
+
+describe("formula amounts", () => {
+  const proportioned: Formula = [
+    { ingredientId: id(1), tier: "base", pct: 25 },
+    { ingredientId: id(2), tier: "base", pct: 15 },
+    { ingredientId: id(3), tier: "heart", pct: 35 },
+    { ingredientId: id(4), tier: "top", pct: 25 },
+  ];
+
+  it("accepts a full bottle with every tier inside the guard rails", () => {
+    expect(savedFormulaSchema.safeParse(proportioned).success).toBe(true);
+  });
+
+  it("rejects a bottle that isn't exactly full, or a tier under 10%", () => {
+    const short = proportioned.map((e) => (e.ingredientId === id(3) ? { ...e, pct: 30 } : e));
+    expect(savedFormulaSchema.safeParse(short).success).toBe(false);
+    expect(draftFormulaSchema.safeParse(short).success).toBe(true);
+    const thinTop: Formula = [
+      { ingredientId: id(1), tier: "base", pct: 50 },
+      { ingredientId: id(3), tier: "heart", pct: 45 },
+      { ingredientId: id(4), tier: "top", pct: 5 },
+    ];
+    expect(savedFormulaSchema.safeParse(thinTop).success).toBe(false);
+  });
+
+  it("rejects amounts off the 5% grid, a tier over 70%, and mixing old and new entries", () => {
+    expect(draftFormulaSchema.safeParse([{ ingredientId: id(1), tier: "base", pct: 12 }]).success).toBe(false);
+    expect(
+      draftFormulaSchema.safeParse([
+        { ingredientId: id(1), tier: "base", pct: 40 },
+        { ingredientId: id(2), tier: "base", pct: 35 },
+      ]).success,
+    ).toBe(false);
+    expect(draftFormulaSchema.safeParse([proportioned[0], { ingredientId: id(3), tier: "heart" }]).success).toBe(false);
+  });
+
+  it("still accepts formulas saved before amounts existed", () => {
+    expect(savedFormulaSchema.safeParse(complete).success).toBe(true);
+  });
+
+  it("treats different proportions as a different blend", async () => {
+    const shifted = proportioned.map((e) =>
+      e.ingredientId === id(1) ? { ...e, pct: 15 } : e.ingredientId === id(2) ? { ...e, pct: 25 } : e,
+    );
+    expect(await formulaHash(shifted)).not.toBe(await formulaHash(proportioned));
+    expect(await formulaHash([...proportioned].reverse())).toBe(await formulaHash(proportioned));
+  });
+
+  it("keeps the hash of formulas saved without amounts unchanged", () => {
+    expect(canonicalFormula(complete)).toBe(`base:${id(1)},${id(2)}|heart:${id(3)}|top:${id(4)}`);
+  });
+});

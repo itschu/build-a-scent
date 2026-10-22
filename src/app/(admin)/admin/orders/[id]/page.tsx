@@ -33,7 +33,7 @@ function Formula({ snapshot }: { snapshot: ItemSnapshot }) {
           <dd className="text-champagne">
             {snapshot.formula
               .filter((i) => i.tier === tier)
-              .map((i) => i.name)
+              .map((i) => (i.pct === undefined ? i.name : `${i.name} ${i.pct}% (${i.ml} ml)`))
               .join(", ")}
           </dd>
         </div>

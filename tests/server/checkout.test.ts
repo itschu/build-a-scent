@@ -271,4 +271,24 @@ describe.skipIf(!testDatabaseUrl)("checkout and payments", () => {
     });
     expect(await getDb().$count(conn.schema.emailOutbox, eq(conn.schema.emailOutbox.dedupeKey, `order_paid:${order.id}`))).toBe(1);
   });
+
+  it("prices a blend by its own proportions and records the amounts for the blending team", async () => {
+    const amounts: Record<string, number> = { Sandalwood: 50, Rose: 20, Jasmine: 15, Bergamot: 15 };
+    // 50 ml spray at 20% → 10 ml concentrate: 5 ml × ₦800 + 2 ml × ₦1,200 + 1.5 ml × ₦1,000 + 1.5 ml × ₦400 = ₦8,500 + ₦15,000 base.
+    const line = {
+      ...customLine(2_350_000),
+      formula: Object.keys(amounts).map((name) => ({ ...catalog.entry(name), pct: amounts[name] })),
+    };
+    const order = await checkout([line]);
+    expect(order.subtotalKobo).toBe(2_350_000);
+    const [item] = await conn.db.select().from(conn.schema.orderItems).where(eq(conn.schema.orderItems.orderId, order.id));
+    const snapshot = item.itemSnapshot as { ingredientCostKobo: number; formula: Array<{ name: string; pct: number; ml: number }> };
+    expect(snapshot.ingredientCostKobo).toBe(850_000);
+    expect(snapshot.formula.map(({ name, pct, ml }) => ({ name, pct, ml }))).toEqual([
+      { name: "Sandalwood", pct: 50, ml: 5 },
+      { name: "Rose", pct: 20, ml: 2 },
+      { name: "Jasmine", pct: 15, ml: 1.5 },
+      { name: "Bergamot", pct: 15, ml: 1.5 },
+    ]);
+  });
 });

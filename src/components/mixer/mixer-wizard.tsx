@@ -3,27 +3,29 @@
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
-  TouchSensor,
+  MouseSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useReducer, useRef, useState } from "react";
 import { saveDraftAction, saveScentAction } from "@/app/(public)/build/actions";
 import { useAuthedAction } from "@/components/auth/auth-gate";
-import { BottleVisual, layersFrom } from "@/components/scent/bottle-visual";
+import { BottleVisual, layersFrom, type BottleGuide, type BottleSegment } from "@/components/scent/bottle-visual";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { toast } from "@/components/ui/toast";
 import { useCartStore } from "@/lib/cart/store";
 import { cn } from "@/lib/cn";
-import { MAX_INGREDIENTS_PER_TIER, MIXER_STEPS, NOTE_TIERS, type MixerStep, type NoteTier } from "@/lib/domain";
+import { MIXER_STEPS, NOTE_TIERS, POUR_STEP_PCT, type MixerStep, type NoteTier } from "@/lib/domain";
 import { TIER_LABELS, bottleLabel } from "@/lib/labels";
 import {
+  blendBlocker,
+  blendPct,
   canVisit,
   formulaFromSelections,
   initialMixerState,
@@ -31,7 +33,10 @@ import {
   isSavedUnchanged,
   isTierStep,
   mixerReducer,
+  pourBlocker,
   snapshotOf,
+  tierBlocker,
+  tierPct,
   type MixerSnapshot,
 } from "@/lib/mixer/state";
 import { mixColors } from "@/lib/color";
@@ -41,15 +46,18 @@ import { scentNameSchema } from "@/lib/validation/scent";
 import type { MixerCatalog } from "@/server/cached";
 import type { CatalogIngredient } from "@/server/dal/catalog";
 import { defaultBottleOptionId } from "./bottle-option-picker";
-import { BottleDropZone, BOTTLE_DROP_ID, DroppableBottle } from "./drop-zone";
-import { IngredientCard, IngredientDragPreview } from "./ingredient-card";
+import { BOTTLE_DROP_ID, PourList, PourTarget } from "./drop-zone";
+import { IngredientDragPreview, IngredientVial } from "./ingredient-vial";
 import { MixerPreview } from "./mixer-preview";
 
 const STEP_COPY: Record<NoteTier, { heading: string; sub: string }> = {
-  base: { heading: "Base Notes", sub: "Choose 1–3 ingredients that anchor your scent and linger longest." },
-  heart: { heading: "Heart Notes", sub: "Choose 1–3 ingredients that form the soul of your scent." },
-  top: { heading: "Top Notes", sub: "Choose 1–3 ingredients for the bright first impression." },
+  base: { heading: "Base Notes", sub: "Pour 1–3 ingredients that anchor your scent and linger longest." },
+  heart: { heading: "Heart Notes", sub: "Pour 1–3 ingredients that form the soul of your scent." },
+  top: { heading: "Top Notes", sub: "Pour 1–3 ingredients for the bright first impression, and fill the bottle." },
 };
+
+const DRAG_POUR_DELAY_MS = 450;
+const DRAG_POUR_REPEAT_MS = 220;
 
 const PENDING = {
   saveDraft: "mixer:save_draft",
@@ -85,6 +93,12 @@ export function MixerWizard({
   const [busy, setBusy] = useState<null | "draft" | "save" | "list">(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [tierMessage, setTierMessage] = useState<string | null>(null);
+  /** The vial picked up on this step; tapping the bottle pours from it. */
+  const [picked, setPicked] = useState<string | null>(null);
+  const [pour, setPour] = useState<{ key: number; color: string } | null>(null);
+  // A stable ID keeps dnd-kit's accessibility IDs the same on the server and the client.
+  const dndId = useId();
+  const dragPour = useRef<{ timer: ReturnType<typeof setTimeout> | null; poured: boolean }>({ timer: null, poured: false });
   const headingRef = useRef<HTMLHeadingElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const firstRender = useRef(true);
@@ -92,10 +106,19 @@ export function MixerWizard({
   const byId = useMemo(() => new Map(catalog.ingredients.map((i) => [i.id, i])), [catalog.ingredients]);
   const shares = tierSharesFrom(catalog.settings);
   const layers = layersFrom(state.selections, (id) => byId.get(id)?.colorHex);
+  const segments: BottleSegment[] = NOTE_TIERS.flatMap((t) =>
+    state.selections[t].map((id) => ({ id, color: byId.get(id)?.colorHex ?? "#000000", pct: state.amounts[id] ?? 0 })),
+  );
+  // Dashed markers at the suggested split (the platform's default tier shares).
+  const guides: BottleGuide[] = [
+    { pct: shares.base, label: "heart" },
+    { pct: shares.base + shares.heart, label: "top" },
+  ];
+  const filled = blendPct(state);
   const stepIndex = MIXER_STEPS.indexOf(state.step);
   const bottle = catalog.bottleOptions.find((o) => o.id === state.bottleOptionId) ?? null;
-  const formula = formulaFromSelections(state.selections);
-  const complete = isComplete(state.selections);
+  const formula = formulaFromSelections(state.selections, state.amounts);
+  const complete = isComplete(state);
   const priceKobo = complete && bottle ? blendPriceKobo(formula, byId, bottle, shares) : null;
 
   // On step change, bring the new step into view and move focus to its heading.
@@ -105,42 +128,93 @@ export function MixerWizard({
       return;
     }
     const section = sectionRef.current;
-    // 64px is the sticky site header.
-    if (section && section.getBoundingClientRect().top < 64) {
+    // The sticky site header is 64px; on phones the pinned bottle panel sits below it.
+    const covered = window.matchMedia("(min-width: 1024px)").matches ? 64 : 224;
+    if (section && section.getBoundingClientRect().top < covered) {
       section.scrollIntoView({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
     }
     headingRef.current?.focus({ preventScroll: true });
   }, [state.step, reduceMotion]);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 8 } }),
-  );
+  // Touch uses tap-to-pick and tap-to-pour, so only a mouse drags vials (touch keeps scrolling).
+  const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 6 } }));
 
-  function add(tier: NoteTier, ingredientId: string) {
-    if (state.selections[tier].length >= MAX_INGREDIENTS_PER_TIER) {
-      setTierMessage(`You can choose up to ${MAX_INGREDIENTS_PER_TIER} ${TIER_LABELS[tier].toLowerCase()} notes.`);
-      return;
+  /** Pours one measure of an ingredient into its tier, or explains why it can't. */
+  function pourInto(tier: NoteTier, ingredientId: string): boolean {
+    const blocker = pourBlocker(state, tier, ingredientId);
+    if (blocker) {
+      setTierMessage(blocker);
+      return false;
     }
     setTierMessage(null);
-    dispatch({ type: "add", tier, ingredientId });
+    dispatch({ type: "pour", tier, ingredientId });
+    setPour({ key: Date.now(), color: byId.get(ingredientId)?.colorHex ?? "#c9a84c" });
+    return true;
+  }
+  // Timers (hold to pour, drag-and-hold) call the latest version, with the latest state.
+  const pourRef = useRef(pourInto);
+  useEffect(() => {
+    pourRef.current = pourInto;
+  });
+
+  function pourBack(tier: NoteTier, ingredientId: string) {
+    setTierMessage(null);
+    dispatch({ type: "pourBack", tier, ingredientId });
+  }
+
+  function remove(tier: NoteTier, ingredientId: string) {
+    setTierMessage(null);
+    if (picked === ingredientId) setPicked(null);
+    dispatch({ type: "remove", tier, ingredientId });
+  }
+
+  function pick(tier: NoteTier, ingredientId: string) {
+    if (picked === ingredientId) return setPicked(null);
+    const blocker = pourBlocker(state, tier, ingredientId);
+    if (blocker) return setTierMessage(blocker);
+    setTierMessage(null);
+    setPicked(ingredientId);
+  }
+
+  function stopDragPour() {
+    if (dragPour.current.timer) clearTimeout(dragPour.current.timer);
+    dragPour.current.timer = null;
   }
 
   function onDragStart(event: DragStartEvent) {
+    dragPour.current.poured = false;
     setDragging(byId.get(event.active.data.current?.ingredientId as string) ?? null);
   }
 
+  // Holding a dragged vial over the bottle keeps pouring.
+  function onDragOver(event: DragOverEvent) {
+    stopDragPour();
+    const ingredientId = event.active.data.current?.ingredientId as string | undefined;
+    const tier = ingredientId ? byId.get(ingredientId)?.noteTier : undefined;
+    if (!ingredientId || !tier || tier !== state.step || event.over?.id !== BOTTLE_DROP_ID) return;
+    const repeat = (delay: number) => {
+      dragPour.current.timer = setTimeout(() => {
+        if (!pourRef.current(tier, ingredientId)) return;
+        dragPour.current.poured = true;
+        repeat(DRAG_POUR_REPEAT_MS);
+      }, delay);
+    };
+    repeat(DRAG_POUR_DELAY_MS);
+  }
+
   function onDragEnd(event: DragEndEvent) {
+    stopDragPour();
     setDragging(null);
     const ingredientId = event.active.data.current?.ingredientId as string | undefined;
-    if (!ingredientId || !event.over || !String(event.over.id).startsWith(BOTTLE_DROP_ID)) return;
+    if (!ingredientId || event.over?.id !== BOTTLE_DROP_ID || dragPour.current.poured) return;
     const tier = byId.get(ingredientId)?.noteTier;
-    if (tier && tier === state.step) add(tier, ingredientId);
+    if (tier && tier === state.step) pourInto(tier, ingredientId);
   }
 
   function go(step: MixerStep) {
     setDirection(MIXER_STEPS.indexOf(step) >= stepIndex ? 1 : -1);
     setTierMessage(null);
+    setPicked(null);
     dispatch({ type: "goTo", step });
   }
 
@@ -160,7 +234,7 @@ export function MixerWizard({
     if (!name || !snapshot.bottleOptionId) return null;
     const result = await saveScentAction({
       name,
-      formula: formulaFromSelections(snapshot.selections),
+      formula: formulaFromSelections(snapshot.selections, snapshot.amounts),
       bottleOptionId: snapshot.bottleOptionId,
       parentScentId: snapshot.parentScentId,
       draftId: snapshot.draftId,
@@ -179,7 +253,7 @@ export function MixerWizard({
     const result = await saveDraftAction({
       draftId: snapshot.draftId,
       name: snapshot.name,
-      formula: formulaFromSelections(snapshot.selections),
+      formula: formulaFromSelections(snapshot.selections, snapshot.amounts),
       bottleOptionId: snapshot.bottleOptionId,
       currentStep: snapshot.step,
       parentScentId: snapshot.parentScentId,
@@ -223,14 +297,33 @@ export function MixerWizard({
 
   const tier = isTierStep(state.step) ? state.step : null;
   const tierIngredients = tier ? catalog.ingredients.filter((i) => i.noteTier === tier) : [];
-  const selectedInTier = tier ? state.selections[tier].map((id) => byId.get(id)).filter((i): i is CatalogIngredient => Boolean(i)) : [];
+  const pourItems = (tiers: readonly NoteTier[]) =>
+    tiers.flatMap((t) =>
+      state.selections[t].flatMap((id) => {
+        const ingredient = byId.get(id);
+        return ingredient ? [{ ingredient, amount: state.amounts[id] ?? 0 }] : [];
+      }),
+    );
+  const pickedIngredient = picked ? byId.get(picked) ?? null : null;
+  const canPourPicked = Boolean(tier && picked && !pourBlocker(state, tier, picked));
+  const nextBlocker = tier ? tierBlocker(state, tier) : null;
 
   return (
-    <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
+    <DndContext
+      id={dndId}
+      sensors={sensors}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragEnd={onDragEnd}
+      onDragCancel={() => {
+        stopDragPour();
+        setDragging(null);
+      }}
+    >
       <div className="mx-auto grid w-full max-w-7xl flex-1 lg:grid-cols-[1fr_340px]">
         <section
           ref={sectionRef}
-          className="order-2 scroll-mt-16 px-4 py-8 sm:px-8 lg:order-1 lg:border-r lg:border-line-soft lg:py-10"
+          className="order-2 scroll-mt-56 px-4 py-8 sm:px-8 lg:order-1 lg:scroll-mt-16 lg:border-r lg:border-line-soft lg:py-10"
         >
           <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
             <ol className="flex gap-2" aria-label="Mixer steps">
@@ -282,48 +375,67 @@ export function MixerWizard({
 
               {tier ? (
                 <>
-                  <p className="mb-8 text-sm text-muted">{STEP_COPY[tier].sub} Drag them into the bottle or tap to add.</p>
-                  <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                    {tierIngredients.map((ingredient) => {
-                      const selected = state.selections[tier].includes(ingredient.id);
-                      return (
-                        <IngredientCard
-                          key={ingredient.id}
-                          ingredient={ingredient}
-                          selected={selected}
-                          full={state.selections[tier].length >= MAX_INGREDIENTS_PER_TIER}
-                          onToggle={() =>
-                            selected ? dispatch({ type: "remove", tier, ingredientId: ingredient.id }) : add(tier, ingredient.id)
-                          }
-                        />
-                      );
-                    })}
+                  <p className="mb-2 text-sm text-muted">{STEP_COPY[tier].sub}</p>
+                  <p className="mb-8 text-sm text-muted">
+                    Tap a vial to pick it up, then tap the bottle to pour {POUR_STEP_PCT}% at a time. Hold the bottle to keep
+                    pouring<span className="hidden lg:inline"> (or drag a vial onto it)</span>. Suggested: about {shares[tier]}%{" "}
+                    {TIER_LABELS[tier].toLowerCase()} notes.
+                  </p>
+                  <div className="mb-6 grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-6">
+                    {tierIngredients.map((ingredient) => (
+                      <IngredientVial
+                        key={ingredient.id}
+                        ingredient={ingredient}
+                        amount={state.amounts[ingredient.id] ?? 0}
+                        picked={picked === ingredient.id}
+                        blocked={pourBlocker(state, tier, ingredient.id)}
+                        onPick={() => pick(tier, ingredient.id)}
+                      />
+                    ))}
                   </div>
                   {tierIngredients.length === 0 && (
                     <Notice className="mb-6">No {TIER_LABELS[tier].toLowerCase()} notes are available right now.</Notice>
                   )}
-                  <BottleDropZone
-                    selected={selectedInTier}
-                    onRemove={(id) => dispatch({ type: "remove", tier, ingredientId: id })}
-                  />
+                  <div className="border border-dashed border-line px-4 py-4">
+                    <p className="mb-3 text-center font-serif text-[0.7rem] uppercase tracking-label text-muted">
+                      {TIER_LABELS[tier]} notes in your bottle · {tierPct(state, tier)}%
+                    </p>
+                    {state.selections[tier].length === 0 ? (
+                      <p className="text-center text-xs text-faint">Nothing poured yet.</p>
+                    ) : (
+                      <PourList
+                        items={pourItems([tier])}
+                        pourBlocker={(id) => pourBlocker(state, tier, id)}
+                        onPour={(id) => pourInto(tier, id)}
+                        onPourBack={(id) => pourBack(tier, id)}
+                        onRemove={(id) => remove(tier, id)}
+                      />
+                    )}
+                  </div>
                   {tierMessage && <p className="mt-3 text-sm text-danger" role="alert">{tierMessage}</p>}
-                  <div className="mt-8 flex items-center gap-4">
+                  <div className="mt-8 flex flex-wrap items-center gap-4">
                     {stepIndex > 0 && (
                       <Button variant="ghost" onClick={() => go(MIXER_STEPS[stepIndex - 1])}>
                         ← Back
                       </Button>
                     )}
-                    <Button onClick={() => go(MIXER_STEPS[stepIndex + 1])} disabled={state.selections[tier].length === 0}>
+                    <Button onClick={() => go(MIXER_STEPS[stepIndex + 1])} disabled={nextBlocker !== null}>
                       Next →
                     </Button>
+                    {nextBlocker && <p className="text-xs text-muted">{nextBlocker}</p>}
                   </div>
                 </>
               ) : (
                 <MixerPreview
                   state={state}
-                  byId={byId}
                   layers={layers}
+                  segments={segments}
                   shares={shares}
+                  pourItems={pourItems}
+                  pourBlocker={(t, id) => pourBlocker(state, t, id)}
+                  onPour={pourInto}
+                  onPourBack={pourBack}
+                  onRemove={remove}
                   bottleOptions={catalog.bottleOptions}
                   priceKobo={priceKobo}
                   nameError={nameError}
@@ -343,22 +455,57 @@ export function MixerWizard({
           </AnimatePresence>
         </section>
 
-        <aside className="order-1 border-b border-line-soft px-4 py-6 sm:px-8 lg:order-2 lg:border-b-0 lg:px-6 lg:py-10">
-          <div className="lg:sticky lg:top-24">
-            <p className="text-center font-serif text-[0.7rem] uppercase tracking-label text-muted">Your blend</p>
-            <DroppableBottle>
-              <BottleVisual layers={layers} shares={shares} className="mx-auto my-4 h-44 lg:h-72" />
-            </DroppableBottle>
-            <dl className="hidden divide-y divide-line-soft text-xs sm:block">
-              {NOTE_TIERS.map((t) => (
-                <div key={t} className="flex justify-between gap-4 py-2.5">
-                  <dt className="font-serif uppercase tracking-label text-gold">{TIER_LABELS[t]}</dt>
-                  <dd className="text-right text-muted">
-                    {state.selections[t].map((id) => byId.get(id)?.name).filter(Boolean).join(", ") || "—"}
-                  </dd>
-                </div>
-              ))}
-            </dl>
+        {/* On phones the bottle stays pinned under the header while the vials scroll. */}
+        <aside className="sticky top-16 z-20 order-1 border-b border-line-soft bg-ink px-4 py-3 sm:px-8 lg:static lg:order-2 lg:border-b-0 lg:bg-transparent lg:px-6 lg:py-10">
+          <div className="flex items-center gap-4 lg:sticky lg:top-24 lg:block">
+            <p className="hidden text-center font-serif text-[0.7rem] uppercase tracking-label text-muted lg:block">Your blend</p>
+            <div className="w-20 shrink-0 lg:my-4 lg:w-auto">
+              <PourTarget
+                pickedName={tier ? pickedIngredient?.name ?? null : null}
+                canPour={canPourPicked}
+                onPour={() => tier && picked && pourRef.current(tier, picked)}
+              >
+                <BottleVisual
+                  layers={layers}
+                  shares={shares}
+                  segments={segments}
+                  guides={tier ? guides : []}
+                  pour={pour}
+                  className="mx-auto h-32 lg:h-72"
+                />
+              </PourTarget>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-serif text-[0.7rem] uppercase tracking-label text-gold lg:text-center" aria-live="polite">
+                {filled}% filled
+              </p>
+              <p className="mt-1 text-xs text-muted lg:mb-4 lg:text-center" aria-live="polite">
+                {tier
+                  ? pickedIngredient
+                    ? canPourPicked
+                      ? `Tap the bottle to pour ${pickedIngredient.name}`
+                      : pourBlocker(state, tier, pickedIngredient.id)
+                    : filled === 100
+                      ? "The bottle is full."
+                      : "Pick a vial, then tap the bottle."
+                  : (blendBlocker(state) ?? "Your blend is ready.")}
+              </p>
+              <dl className="hidden divide-y divide-line-soft text-xs lg:block">
+                {NOTE_TIERS.map((t) => (
+                  <div key={t} className="flex justify-between gap-4 py-2.5">
+                    <dt className="font-serif uppercase tracking-label text-gold">
+                      {TIER_LABELS[t]} <span className="text-muted">{tierPct(state, t)}%</span>
+                    </dt>
+                    <dd className="text-right text-muted">
+                      {state.selections[t]
+                        .map((id) => byId.get(id) && `${byId.get(id)!.name} ${state.amounts[id] ?? 0}%`)
+                        .filter(Boolean)
+                        .join(", ") || "—"}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
           </div>
         </aside>
       </div>
