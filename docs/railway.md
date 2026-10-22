@@ -1,11 +1,13 @@
 # Deploying on Railway
 
 The project runs as Railway services in one project, connected over Railway's private
-network.
+network. Service settings (build, start, pre-deploy, health check, cron, volume) live in
+`.railway/railway.ts`: preview changes with `railway config plan` and apply them with
+`railway config apply`. Variables are not managed there; set them with `railway variables`.
 
 | Service | Source | Purpose |
 | --- | --- | --- |
-| **app** | this repo (`railway.json`) | Next.js server. Runs `pnpm db:migrate` before each deploy, then `pnpm start`; health check `/api/health` |
+| **build-a-scent** (app) | this repo | Next.js server. Runs `pnpm db:migrate` before each deploy, then `pnpm start`; health check `/api/health` |
 | **Postgres** | Railway Postgres template | Primary database. Turn on daily backups in the service's Backups tab |
 | **jobs** | this repo, cron schedule `*/5 * * * *` | Background jobs (`pnpm jobs:run`): release expired stock holds, expire abandoned orders, re-verify stuck payments, retry emails, prune rate limits |
 | **Volume** | Railway volume attached to the app, mounted at `/data` | Uploaded images, served by the app at `/uploads/...` |
@@ -19,11 +21,10 @@ network.
    - `BETTER_AUTH_SECRET` and `CHECKOUT_CONTEXT_SECRET` → `openssl rand -base64 32` each
    - Google, Paystack, Flutterwave, Resend (`RESEND_API_KEY`, `EMAIL_FROM`) credentials, and `UPLOADS_DIR=/data`. The server refuses to start in production if any are missing.
 3. Deploy. Migrations run automatically before the new version starts.
-4. Seed once: from a machine with the Railway CLI, run
-   `railway run --service app -- sh -c 'DATABASE_URL=$DATABASE_PUBLIC_URL pnpm db:seed'`
-   (`DATABASE_PUBLIC_URL` comes from the Postgres service; the private URL only resolves inside Railway).
+4. Seed once, inside the running app container (the database URL only resolves on
+   Railway's private network): `railway ssh --service build-a-scent -- pnpm db:seed`.
 5. Sign up on the site with the owner's email, then promote that account the same way:
-   `... pnpm admin:promote --email owner@example.com`.
+   `railway ssh --service build-a-scent -- pnpm admin:promote --email owner@example.com`.
 
 ## Image storage
 
@@ -39,12 +40,9 @@ Edit `src/server/db/schema`, run `pnpm db:generate --name <change>`, review the 
 
 ## Background jobs service
 
-1. In the Railway project, **New → GitHub Repo** and pick this repo again; name the service `jobs`.
-2. Settings → Deploy: set the **Start command** to `pnpm jobs:run` and the **Cron schedule** to
-   `*/5 * * * *`. Remove the health check and pre-deploy command for this service (the app
-   service already runs migrations).
-3. Variables: share the app service's variables (at minimum `DATABASE_URL`, `APP_URL`,
-   `NODE_ENV=production`, gateway secrets, `RESEND_API_KEY` and `EMAIL_FROM`), e.g. `${{app.PAYSTACK_SECRET_KEY}}`.
+The `jobs` service is defined in `.railway/railway.ts` (start command `pnpm jobs:run`, cron
+`*/5 * * * *`, no health check or pre-deploy; the app service runs migrations). It needs the
+same variables as the app, set as references, e.g. `${{build-a-scent.PAYSTACK_SECRET_KEY}}`.
 
 Each run executes every job once, prints a one-line JSON summary, and exits non-zero if any
 job failed. Jobs claim rows with `FOR UPDATE SKIP LOCKED`, so overlapping runs are safe.
@@ -70,5 +68,5 @@ events as received; every payment is confirmed by calling the gateway's verify A
 
 ## Health check
 
-`railway.json` sets `healthcheckPath: /api/health`. It returns `200 {"status":"ok"}` only when
+`.railway/railway.ts` sets the health check to `/api/health`. It returns `200 {"status":"ok"}` only when
 the database is reachable, so a deploy that cannot reach Postgres never takes traffic.
