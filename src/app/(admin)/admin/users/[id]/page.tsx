@@ -62,7 +62,7 @@ async function User({ params }: { params: PageProps<"/admin/users/[id]">["params
       {user.bannedAt && !user.deletedAt && (
         <Notice tone="error" className="mb-6">
           Blocked since {formatDate(user.bannedAt)}
-          {user.banReason ? `: ${user.banReason}` : ""}. They can&apos;t sign in and their listings are hidden from buyers.
+          {user.banReason ? `: ${user.banReason}` : ""}. They can&apos;t sign in, and their listings and share links are hidden.
         </Notice>
       )}
 

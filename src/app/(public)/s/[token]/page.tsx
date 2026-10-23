@@ -36,7 +36,7 @@ async function SharedScent({ params }: { params: PageProps<"/s/[token]">["params
   if (!scent) {
     return (
       <div className="py-20 text-center">
-        <h1 className="mb-4 font-serif text-2xl text-cream">This scent is no longer shared.</h1>
+        <h1 className="mb-4 font-serif text-2xl text-cream">This scent isn&apos;t available.</h1>
         <p className="mb-8 text-sm text-muted">The owner may have turned sharing off. Why not create your own?</p>
         <Link href="/build" className={buttonClasses()}>
           Build your own

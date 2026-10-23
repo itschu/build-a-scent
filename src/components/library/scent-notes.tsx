@@ -2,7 +2,7 @@ import { NOTE_TIERS } from "@/lib/domain";
 import { TIER_LABELS } from "@/lib/labels";
 import type { ScentIngredient } from "@/server/dal/library";
 
-/** Ingredient names grouped by tier; discontinued ones are struck through. */
+/** Ingredient names (with amounts) grouped by tier; discontinued ones are struck through. */
 export function ScentNotes({ ingredients }: { ingredients: ScentIngredient[] }) {
   return (
     <dl className="space-y-1.5 text-xs">
@@ -17,7 +17,10 @@ export function ScentNotes({ ingredients }: { ingredients: ScentIngredient[] }) 
                 : inTier.map((i, idx) => (
                     <span key={i.id}>
                       {idx > 0 && ", "}
-                      <span className={i.isActive ? undefined : "text-danger line-through"}>{i.name}</span>
+                      <span className={i.isActive ? undefined : "text-danger line-through"}>
+                        {i.name}
+                        {i.pct !== undefined && <span className="text-faint"> {i.pct}%</span>}
+                      </span>
                     </span>
                   ))}
             </dd>

@@ -334,7 +334,7 @@ export async function inviteUser(actor: Actor, input: InviteUserInput): Promise<
 
 /**
  * Deletes an account by anonymising it: personal details are removed, sign-in methods and
- * sessions are deleted, listings are withdrawn and drafts discarded. Orders are kept (with
+ * sessions are deleted, listings are withdrawn, share links turned off and drafts discarded. Orders are kept (with
  * their delivery details) for accounting and refunds.
  */
 export async function deleteUser(actor: Actor, id: string): Promise<void> {
@@ -367,6 +367,8 @@ export async function deleteUser(actor: Actor, id: string): Promise<void> {
       .set({ status: "withdrawn" })
       .where(and(eq(schema.marketplaceListings.sellerId, user.id), ne(schema.marketplaceListings.status, "withdrawn")));
     await tx.delete(schema.savedScents).where(and(eq(schema.savedScents.userId, user.id), eq(schema.savedScents.status, "draft")));
+    // Share links stop working for good (blocking only hides them while blocked).
+    await tx.update(schema.savedScents).set({ isShared: false }).where(eq(schema.savedScents.userId, user.id));
     await tx.delete(schema.notifications).where(eq(schema.notifications.userId, user.id));
     await audit(tx, actor, user.id, "deleted_account", { email: user.email });
   });

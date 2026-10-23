@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { NoteTier } from "@/lib/domain";
 import type { Formula } from "@/lib/formula";
 import { bottleLabel } from "@/lib/labels";
@@ -23,7 +23,8 @@ type SharedBase = {
 
 /**
  * A publicly shared scent. When it has a live marketplace listing, the formula is withheld
- * (only the note profile is returned) and buyers are sent to the listing instead.
+ * (only the note profile is returned) and buyers are sent to the listing instead. Scents of
+ * blocked or deleted accounts aren't available.
  */
 export type SharedScent =
   | (SharedBase & { kind: "formula"; ingredients: ScentIngredient[]; formula: Formula; priceKobo: number | null })
@@ -41,6 +42,7 @@ export async function getSharedScent(token: string): Promise<SharedScent | null>
       featured: schema.marketplaceListings.featuredIngredientIds,
     })
     .from(schema.savedScents)
+    .innerJoin(schema.users, eq(schema.users.id, schema.savedScents.userId))
     .leftJoin(schema.profiles, eq(schema.profiles.userId, schema.savedScents.userId))
     .leftJoin(schema.marketplaceListings, eq(schema.marketplaceListings.savedScentId, schema.savedScents.id))
     .where(
@@ -48,6 +50,8 @@ export async function getSharedScent(token: string): Promise<SharedScent | null>
         eq(schema.savedScents.shareToken, token),
         eq(schema.savedScents.isShared, true),
         eq(schema.savedScents.status, "saved"),
+        // Deleted accounts are also blocked, so this covers both.
+        isNull(schema.users.bannedAt),
       ),
     );
   if (!row) return null;
@@ -82,7 +86,7 @@ export async function getSharedScent(token: string): Promise<SharedScent | null>
     formula: scent.formula,
     ingredients: scent.formula.flatMap((e) => {
       const i = ingredients.get(e.ingredientId);
-      return i ? [{ id: i.id, name: i.name, colorHex: i.colorHex, tier: e.tier, isActive: i.isActive }] : [];
+      return i ? [{ id: i.id, name: i.name, colorHex: i.colorHex, tier: e.tier, isActive: i.isActive, pct: e.pct }] : [];
     }),
     priceKobo: availability.available && bottle ? blendPriceKobo(scent.formula, ingredients, bottle, tierSharesFrom(settings)) : null,
   };

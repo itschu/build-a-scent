@@ -179,7 +179,7 @@ export function UserAccessControls({
           <p className="text-sm text-faint">{protectedReason}</p>
         ) : !blockOpen ? (
           <div className="space-y-3 text-sm">
-            <p className="text-muted">Signs them out, stops them signing in and hides their listings. Orders aren&apos;t affected.</p>
+            <p className="text-muted">Signs them out, stops them signing in and hides their listings and share links. Orders aren&apos;t affected.</p>
             <Button variant="ghost" size="sm" onClick={() => setBlockOpen(true)}>
               Block…
             </Button>
@@ -213,7 +213,7 @@ export function UserAccessControls({
         ) : (
           <div className="space-y-3 text-sm">
             <p className="text-muted">
-              Removes their name, email, profile and sign-in methods, withdraws their listings and discards drafts. Their orders are kept for
+              Removes their name, email, profile and sign-in methods, withdraws their listings, turns off their share links and discards drafts. Their orders are kept for
               your records. This can&apos;t be undone.
             </p>
             <Field label='Type "DELETE" to confirm'>

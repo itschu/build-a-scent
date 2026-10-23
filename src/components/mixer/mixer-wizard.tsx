@@ -122,6 +122,10 @@ export function MixerWizard({
     { pct: shares.base + shares.heart, label: "top" },
   ];
   const filled = blendPct(state);
+  const filledRef = useRef(filled);
+  useEffect(() => {
+    filledRef.current = filled;
+  }, [filled]);
   const stepIndex = MIXER_STEPS.indexOf(state.step);
   const bottle = catalog.bottleOptions.find((o) => o.id === state.bottleOptionId) ?? null;
   const formula = formulaFromSelections(state.selections, state.amounts);
@@ -175,8 +179,11 @@ export function MixerWizard({
       seen = false;
     }
     if (seen || state.step !== "base" || blendPct(state) > 0) return;
-    // Wait for the step's entrance animation so the vials are where they'll stay.
-    const timer = setTimeout(showCoach, 600);
+    // Wait for the step's entrance animation so the vials are where they'll stay, and skip
+    // it if they've already started pouring in the meantime.
+    const timer = setTimeout(() => {
+      if (filledRef.current === 0) showCoach();
+    }, 600);
     return () => clearTimeout(timer);
     // Only on first load: later pours or step changes shouldn't bring it back.
     // eslint-disable-next-line react-hooks/exhaustive-deps

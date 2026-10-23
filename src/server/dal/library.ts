@@ -11,7 +11,15 @@ import { getSettings } from "@/server/settings";
 import { assertSignedIn, NotFoundError, ValidationError, type Actor } from "./actor";
 import { getIngredientsByIds, type CatalogBottleOption, type CatalogIngredient } from "./catalog";
 
-export type ScentIngredient = { id: string; name: string; colorHex: string; tier: NoteTier; isActive: boolean };
+export type ScentIngredient = {
+  id: string;
+  name: string;
+  colorHex: string;
+  tier: NoteTier;
+  isActive: boolean;
+  /** Share of the blend in percent (absent on formulas saved before amounts existed). */
+  pct?: number;
+};
 
 export type Availability = { available: true } | { available: false; reason: string };
 
@@ -45,6 +53,8 @@ export type LibraryScent = {
   name: string | null;
   updatedAt: Date;
   currentStep: MixerStep | null;
+  /** The saved formula with its amounts, for reordering exactly this blend. */
+  formula: Formula;
   ingredients: ScentIngredient[];
   bottle: { id: string; label: string } | null;
   priceKobo: number | null;
@@ -91,9 +101,10 @@ export async function listLibrary(actor: Actor): Promise<{ saved: LibraryScent[]
       name: scent.name,
       updatedAt: scent.updatedAt,
       currentStep: scent.currentStep,
+      formula: scent.formula,
       ingredients: scent.formula.flatMap((e) => {
         const i = ingredients.get(e.ingredientId);
-        return i ? [{ id: i.id, name: i.name, colorHex: i.colorHex, tier: e.tier, isActive: i.isActive }] : [];
+        return i ? [{ id: i.id, name: i.name, colorHex: i.colorHex, tier: e.tier, isActive: i.isActive, pct: e.pct }] : [];
       }),
       bottle: bottle ? { id: bottle.id, label: bottleLabel(bottle) } : null,
       priceKobo:
@@ -124,6 +135,37 @@ export async function deleteDraft(actor: Actor, id: string): Promise<void> {
     )
     .returning({ id: schema.savedScents.id });
   if (deleted.length === 0) throw new NotFoundError("Draft not found");
+}
+
+/**
+ * Deletes one of the actor's saved scents (its share link stops working). A scent that's on
+ * the marketplace or awaiting review must be withdrawn first; one whose listing has sales is
+ * kept, because the seller's earnings records point at that listing.
+ */
+export async function deleteSavedScent(actor: Actor, id: string): Promise<void> {
+  assertSignedIn(actor);
+  await getDb().transaction(async (tx) => {
+    const [row] = await tx
+      .select({ scentId: schema.savedScents.id, listingId: schema.marketplaceListings.id, listingStatus: schema.marketplaceListings.status })
+      .from(schema.savedScents)
+      .leftJoin(schema.marketplaceListings, eq(schema.marketplaceListings.savedScentId, schema.savedScents.id))
+      .where(and(eq(schema.savedScents.id, id), eq(schema.savedScents.userId, actor.userId), eq(schema.savedScents.status, "saved")))
+      .for("update", { of: schema.savedScents });
+    if (!row) throw new NotFoundError("Scent not found");
+    if (row.listingId) {
+      if (row.listingStatus !== "withdrawn" && row.listingStatus !== "rejected") {
+        throw new ValidationError("This scent is listed on the marketplace. Withdraw the listing from your seller dashboard first.");
+      }
+      const [sale] = await tx
+        .select({ id: schema.sellerEarningsLedger.id })
+        .from(schema.sellerEarningsLedger)
+        .where(eq(schema.sellerEarningsLedger.marketplaceListingId, row.listingId))
+        .limit(1);
+      if (sale) throw new ValidationError("This scent has marketplace sales, so it's kept with your sales records.");
+      await tx.delete(schema.marketplaceListings).where(eq(schema.marketplaceListings.id, row.listingId));
+    }
+    await tx.delete(schema.savedScents).where(eq(schema.savedScents.id, row.scentId));
+  });
 }
 
 function newShareToken(): string {

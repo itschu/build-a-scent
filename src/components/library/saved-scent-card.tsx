@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { setSharingAction } from "@/app/(user)/library/actions";
+import { deleteSavedScentAction, setSharingAction } from "@/app/(user)/library/actions";
 import { BottleVisual } from "@/components/scent/bottle-visual";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -23,18 +23,32 @@ export function SavedScentCard({ scent }: { scent: LibraryScent }) {
   const addToCart = useCartStore((s) => s.addItem);
   const [shareToken, setShareToken] = useState(scent.shareToken);
   const [sharePending, setSharePending] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  // A live or pending listing has to be withdrawn first (the server enforces this too).
+  const listed = scent.listing !== null && scent.listing.status !== "withdrawn" && scent.listing.status !== "rejected";
   const layers = layersOf(scent.ingredients);
   const available = scent.availability.available;
   const name = scent.name ?? "Untitled scent";
   const origin = useOrigin();
   const shareUrl = shareToken && origin ? `${origin}/s/${shareToken}` : null;
 
+  async function remove() {
+    if (!window.confirm(`Delete "${name}"? This can't be undone, and its share link will stop working.`)) return;
+    setDeletePending(true);
+    const result = await deleteSavedScentAction(scent.id);
+    setDeletePending(false);
+    if (!result.ok) return toast(result.error, { tone: "error" });
+    toast(`${name} deleted.`, { tone: "info" });
+    router.refresh();
+  }
+
   function reorder() {
     if (!available || !scent.bottle || scent.priceKobo === null) return;
     addToCart({
       type: "custom_scent",
       name,
-      formula: scent.ingredients.map((i) => ({ ingredientId: i.id, tier: i.tier })),
+      // The saved formula, with its amounts, so the reorder is exactly this blend.
+      formula: scent.formula,
       bottleOptionId: scent.bottle.id,
       bottleLabel: scent.bottle.label,
       colors: NOTE_TIERS.map((t) => mixColors(layers[t]) ?? "#000000"),
@@ -138,6 +152,17 @@ export function SavedScentCard({ scent }: { scent: LibraryScent }) {
               List for sale
             </Button>
           ))}
+        <Button
+          variant="danger"
+          size="sm"
+          className="ml-auto"
+          onClick={remove}
+          pending={deletePending}
+          disabled={listed}
+          title={listed ? "Withdraw the marketplace listing first" : undefined}
+        >
+          Delete
+        </Button>
       </div>
     </article>
   );
