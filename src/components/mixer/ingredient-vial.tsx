@@ -2,27 +2,29 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import { motion, useReducedMotion } from "framer-motion";
+import { POUR_STEP_PCT } from "@/lib/domain";
 import { cn } from "@/lib/cn";
 import type { CatalogIngredient } from "@/server/dal/catalog";
 
 /**
- * An ingredient as a vial of coloured liquid. Tap to pick it up, then tap the bottle to pour;
- * with a mouse it can also be dragged onto the bottle.
+ * An ingredient as a vial of coloured liquid. Drag it into the bottle (press and hold first
+ * on touch screens) to pour, or tap it to pour one measure.
  */
 export function IngredientVial({
   ingredient,
   amount,
-  picked,
   blocked,
-  onPick,
+  pourKey,
+  onPour,
 }: {
   ingredient: CatalogIngredient;
   /** Percent of the blend already poured (0 if not in the bottle). */
   amount: number;
-  picked: boolean;
   /** Why nothing more can be poured from this vial, if anything. */
   blocked: string | null;
-  onPick: () => void;
+  /** Changes each time this vial pours, to replay the tilt. */
+  pourKey: number | null;
+  onPour: () => void;
 }) {
   const reduceMotion = useReducedMotion();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -37,28 +39,30 @@ export function IngredientVial({
       type="button"
       {...listeners}
       {...attributes}
-      // dnd-kit marks draggables as role=button; this is a real toggle button instead.
+      // dnd-kit marks draggables as role=button with drag instructions; this is a plain button.
       role={undefined}
-      aria-pressed={picked}
-      aria-disabled={(blocked && !picked) || undefined}
-      aria-label={`${ingredient.name}, ${ingredient.scentFamily}${amount > 0 ? `, ${amount}% of your blend` : ""}${
-        picked ? ", picked up" : ""
-      }`}
-      onClick={onPick}
+      aria-roledescription={undefined}
+      aria-disabled={blocked ? true : undefined}
+      aria-label={`Pour ${POUR_STEP_PCT}% ${ingredient.name}, ${ingredient.scentFamily}${amount > 0 ? `. ${amount}% in your blend` : ""}`}
+      onClick={onPour}
+      data-vial={ingredient.id}
+      onContextMenu={(e) => e.preventDefault()}
       className={cn(
-        "group relative flex select-none flex-col items-center px-2 pb-3 pt-4 text-center transition-colors",
-        picked ? "bg-raised" : "hover:bg-raised/60",
-        blocked && !picked ? "cursor-not-allowed opacity-40" : "cursor-pointer",
+        "group relative flex touch-manipulation select-none flex-col items-center px-2 pb-3 pt-4 text-center transition-colors [-webkit-touch-callout:none]",
+        amount > 0 ? "bg-raised" : "hover:bg-raised/60",
+        blocked ? "cursor-not-allowed opacity-40" : "cursor-grab active:cursor-grabbing",
         isDragging && "opacity-30",
       )}
     >
       <motion.span
-        className="mb-3 block"
-        animate={picked && !reduceMotion ? { y: -10, rotate: -14 } : { y: 0, rotate: 0 }}
-        transition={{ type: "spring", stiffness: 300, damping: 18 }}
+        key={pourKey ?? "idle"}
+        className="mb-3 block origin-bottom"
+        initial={false}
+        animate={pourKey && !reduceMotion ? { rotate: [0, -32, -32, 0], y: [0, -8, -8, 0] } : { rotate: 0, y: 0 }}
+        transition={{ duration: 0.55, times: [0, 0.25, 0.7, 1] }}
         aria-hidden
       >
-        <VialGlyph color={ingredient.colorHex} picked={picked} />
+        <VialGlyph color={ingredient.colorHex} active={amount > 0} />
       </motion.span>
       <span className="font-serif text-[0.72rem] uppercase tracking-[0.12em] text-champagne">{ingredient.name}</span>
       <span className="mt-0.5 text-[0.68rem] text-faint">{ingredient.scentFamily}</span>
@@ -71,22 +75,22 @@ export function IngredientVial({
   );
 }
 
-function VialGlyph({ color, picked, className }: { color: string; picked?: boolean; className?: string }) {
+export function VialGlyph({ color, active, className }: { color: string; active?: boolean; className?: string }) {
   return (
     <svg viewBox="0 0 28 72" className={cn("h-16 w-7", className)}>
-      <rect x="4" y="2" width="20" height="5" rx="2" fill={picked ? "#c9a84c" : "#5a4a2a"} />
-      <path d="M6 7h16v51a8 8 0 0 1-16 0Z" fill="#0d0d0d" stroke={picked ? "#c9a84c" : "#3a3a3a"} strokeWidth="1.5" />
+      <rect x="4" y="2" width="20" height="5" rx="2" fill={active ? "#c9a84c" : "#5a4a2a"} />
+      <path d="M6 7h16v51a8 8 0 0 1-16 0Z" fill="#0d0d0d" stroke={active ? "#c9a84c" : "#3a3a3a"} strokeWidth="1.5" />
       <path d="M7 24h14v34a7 7 0 0 1-14 0Z" fill={color} opacity="0.92" />
       <rect x="9" y="12" width="2.5" height="40" rx="1.25" fill="#fff" opacity="0.08" />
     </svg>
   );
 }
 
-/** The vial shown under the pointer while dragging. */
+/** The vial under the finger or pointer while dragging, tipped as if pouring. */
 export function IngredientDragPreview({ ingredient }: { ingredient: CatalogIngredient }) {
   return (
-    <div className="flex -rotate-12 flex-col items-center drop-shadow-2xl">
-      <VialGlyph color={ingredient.colorHex} picked />
+    <div className="flex -rotate-[24deg] flex-col items-center drop-shadow-2xl">
+      <VialGlyph color={ingredient.colorHex} active className="h-20 w-9" />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   DndContext,
   DragOverlay,
   MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -46,9 +47,10 @@ import { scentNameSchema } from "@/lib/validation/scent";
 import type { MixerCatalog } from "@/server/cached";
 import type { CatalogIngredient } from "@/server/dal/catalog";
 import { defaultBottleOptionId } from "./bottle-option-picker";
-import { BOTTLE_DROP_ID, PourList, PourTarget } from "./drop-zone";
+import { BOTTLE_DROP_ID, BottleDropTarget, PourList } from "./drop-zone";
 import { IngredientDragPreview, IngredientVial } from "./ingredient-vial";
 import { MixerPreview } from "./mixer-preview";
+import { PourCoach } from "./pour-coach";
 
 const STEP_COPY: Record<NoteTier, { heading: string; sub: string }> = {
   base: { heading: "Base Notes", sub: "Pour 1–3 ingredients that anchor your scent and linger longest." },
@@ -57,7 +59,9 @@ const STEP_COPY: Record<NoteTier, { heading: string; sub: string }> = {
 };
 
 const DRAG_POUR_DELAY_MS = 450;
-const DRAG_POUR_REPEAT_MS = 220;
+const DRAG_POUR_REPEAT_MS = 300;
+/** Set once the pouring demo has been seen (or dismissed) in this browser. */
+const COACH_SEEN_KEY = "bas:mixer-coach-seen";
 
 const PENDING = {
   saveDraft: "mixer:save_draft",
@@ -93,9 +97,10 @@ export function MixerWizard({
   const [busy, setBusy] = useState<null | "draft" | "save" | "list">(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [tierMessage, setTierMessage] = useState<string | null>(null);
-  /** The vial picked up on this step; tapping the bottle pours from it. */
-  const [picked, setPicked] = useState<string | null>(null);
-  const [pour, setPour] = useState<{ key: number; color: string } | null>(null);
+  const [pour, setPour] = useState<{ key: number; color: string; ingredientId: string } | null>(null);
+  /** The pouring demo overlay, with the elements it points between. */
+  const [coach, setCoach] = useState<{ source: Element; target: Element; color: string } | null>(null);
+  const bottleRef = useRef<HTMLDivElement>(null);
   // A stable ID keeps dnd-kit's accessibility IDs the same on the server and the client.
   const dndId = useId();
   const dragPour = useRef<{ timer: ReturnType<typeof setTimeout> | null; poured: boolean }>({ timer: null, poured: false });
@@ -136,8 +141,44 @@ export function MixerWizard({
     headingRef.current?.focus({ preventScroll: true });
   }, [state.step, reduceMotion]);
 
-  // Touch uses tap-to-pick and tap-to-pour, so only a mouse drags vials (touch keeps scrolling).
-  const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 6 } }));
+  // A mouse drags straight away; on touch a short press first, so swiping still scrolls.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
+  );
+
+  function showCoach() {
+    const source = sectionRef.current?.querySelector("[data-vial]");
+    const target = bottleRef.current;
+    if (!source || !target) return;
+    const firstId = source.getAttribute("data-vial");
+    setCoach({ source, target, color: (firstId && byId.get(firstId)?.colorHex) || "#c9a84c" });
+  }
+
+  function closeCoach() {
+    setCoach(null);
+    try {
+      localStorage.setItem(COACH_SEEN_KEY, "1");
+    } catch {
+      // Storage unavailable (private mode): the demo may show again next time.
+    }
+  }
+
+  // Show the pouring demo once, to someone starting an empty blend on a tier step.
+  useEffect(() => {
+    let seen = false;
+    try {
+      seen = localStorage.getItem(COACH_SEEN_KEY) === "1";
+    } catch {
+      seen = false;
+    }
+    if (seen || state.step !== "base" || blendPct(state) > 0) return;
+    // Wait for the step's entrance animation so the vials are where they'll stay.
+    const timer = setTimeout(showCoach, 600);
+    return () => clearTimeout(timer);
+    // Only on first load: later pours or step changes shouldn't bring it back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Pours one measure of an ingredient into its tier, or explains why it can't. */
   function pourInto(tier: NoteTier, ingredientId: string): boolean {
@@ -148,10 +189,10 @@ export function MixerWizard({
     }
     setTierMessage(null);
     dispatch({ type: "pour", tier, ingredientId });
-    setPour({ key: Date.now(), color: byId.get(ingredientId)?.colorHex ?? "#c9a84c" });
+    setPour({ key: Date.now(), color: byId.get(ingredientId)?.colorHex ?? "#c9a84c", ingredientId });
     return true;
   }
-  // Timers (hold to pour, drag-and-hold) call the latest version, with the latest state.
+  // The drag-and-hold timer calls the latest version, with the latest state.
   const pourRef = useRef(pourInto);
   useEffect(() => {
     pourRef.current = pourInto;
@@ -164,16 +205,7 @@ export function MixerWizard({
 
   function remove(tier: NoteTier, ingredientId: string) {
     setTierMessage(null);
-    if (picked === ingredientId) setPicked(null);
     dispatch({ type: "remove", tier, ingredientId });
-  }
-
-  function pick(tier: NoteTier, ingredientId: string) {
-    if (picked === ingredientId) return setPicked(null);
-    const blocker = pourBlocker(state, tier, ingredientId);
-    if (blocker) return setTierMessage(blocker);
-    setTierMessage(null);
-    setPicked(ingredientId);
   }
 
   function stopDragPour() {
@@ -214,7 +246,6 @@ export function MixerWizard({
   function go(step: MixerStep) {
     setDirection(MIXER_STEPS.indexOf(step) >= stepIndex ? 1 : -1);
     setTierMessage(null);
-    setPicked(null);
     dispatch({ type: "goTo", step });
   }
 
@@ -304,14 +335,14 @@ export function MixerWizard({
         return ingredient ? [{ ingredient, amount: state.amounts[id] ?? 0 }] : [];
       }),
     );
-  const pickedIngredient = picked ? byId.get(picked) ?? null : null;
-  const canPourPicked = Boolean(tier && picked && !pourBlocker(state, tier, picked));
   const nextBlocker = tier ? tierBlocker(state, tier) : null;
 
   return (
     <DndContext
       id={dndId}
       sensors={sensors}
+      // The bottle is pinned at the top on phones; auto-scroll would drag the page away from it.
+      autoScroll={false}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
@@ -377,9 +408,11 @@ export function MixerWizard({
                 <>
                   <p className="mb-2 text-sm text-muted">{STEP_COPY[tier].sub}</p>
                   <p className="mb-8 text-sm text-muted">
-                    Tap a vial to pick it up, then tap the bottle to pour {POUR_STEP_PCT}% at a time. Hold the bottle to keep
-                    pouring<span className="hidden lg:inline"> (or drag a vial onto it)</span>. Suggested: about {shares[tier]}%{" "}
-                    {TIER_LABELS[tier].toLowerCase()} notes.
+                    Drag a vial into the bottle to pour, and hold it there to keep pouring, or tap a vial to add{" "}
+                    {POUR_STEP_PCT}%. Suggested: about {shares[tier]}% {TIER_LABELS[tier].toLowerCase()} notes.{" "}
+                    <button type="button" onClick={showCoach} className="text-gold underline-offset-4 hover:underline">
+                      How to pour
+                    </button>
                   </p>
                   <div className="mb-6 grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-6">
                     {tierIngredients.map((ingredient) => (
@@ -387,9 +420,9 @@ export function MixerWizard({
                         key={ingredient.id}
                         ingredient={ingredient}
                         amount={state.amounts[ingredient.id] ?? 0}
-                        picked={picked === ingredient.id}
                         blocked={pourBlocker(state, tier, ingredient.id)}
-                        onPick={() => pick(tier, ingredient.id)}
+                        pourKey={pour?.ingredientId === ingredient.id ? pour.key : null}
+                        onPour={() => pourInto(tier, ingredient.id)}
                       />
                     ))}
                   </div>
@@ -459,12 +492,8 @@ export function MixerWizard({
         <aside className="sticky top-16 z-20 order-1 border-b border-line-soft bg-ink px-4 py-3 sm:px-8 lg:static lg:order-2 lg:border-b-0 lg:bg-transparent lg:px-6 lg:py-10">
           <div className="flex items-center gap-4 lg:sticky lg:top-24 lg:block">
             <p className="hidden text-center font-serif text-[0.7rem] uppercase tracking-label text-muted lg:block">Your blend</p>
-            <div className="w-20 shrink-0 lg:my-4 lg:w-auto">
-              <PourTarget
-                pickedName={tier ? pickedIngredient?.name ?? null : null}
-                canPour={canPourPicked}
-                onPour={() => tier && picked && pourRef.current(tier, picked)}
-              >
+            <div ref={bottleRef} className="w-20 shrink-0 lg:my-4 lg:w-auto">
+              <BottleDropTarget dragging={Boolean(dragging)}>
                 <BottleVisual
                   layers={layers}
                   shares={shares}
@@ -473,7 +502,7 @@ export function MixerWizard({
                   pour={pour}
                   className="mx-auto h-32 lg:h-72"
                 />
-              </PourTarget>
+              </BottleDropTarget>
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-serif text-[0.7rem] uppercase tracking-label text-gold lg:text-center" aria-live="polite">
@@ -481,13 +510,11 @@ export function MixerWizard({
               </p>
               <p className="mt-1 text-xs text-muted lg:mb-4 lg:text-center" aria-live="polite">
                 {tier
-                  ? pickedIngredient
-                    ? canPourPicked
-                      ? `Tap the bottle to pour ${pickedIngredient.name}`
-                      : pourBlocker(state, tier, pickedIngredient.id)
+                  ? dragging
+                    ? `Drop ${dragging.name} in the bottle. Hold it there to keep pouring.`
                     : filled === 100
                       ? "The bottle is full."
-                      : "Pick a vial, then tap the bottle."
+                      : "Drag a vial in here, or tap one to pour."
                   : (blendBlocker(state) ?? "Your blend is ready.")}
               </p>
               <dl className="hidden divide-y divide-line-soft text-xs lg:block">
@@ -510,6 +537,7 @@ export function MixerWizard({
         </aside>
       </div>
       <DragOverlay dropAnimation={null}>{dragging && <IngredientDragPreview ingredient={dragging} />}</DragOverlay>
+      {coach && <PourCoach source={coach.source} target={coach.target} color={coach.color} onClose={closeCoach} />}
     </DndContext>
   );
 }

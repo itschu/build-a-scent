@@ -1,83 +1,29 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { useEffect, useRef } from "react";
 import { POUR_STEP_PCT } from "@/lib/domain";
 import { cn } from "@/lib/cn";
 import type { CatalogIngredient } from "@/server/dal/catalog";
 
 export const BOTTLE_DROP_ID = "bottle";
 
-const HOLD_DELAY_MS = 350;
-const HOLD_REPEAT_MS = 180;
-
 /**
- * The bottle as a pour target: tap to pour one measure from the picked vial, hold to keep
- * pouring. Vials can also be dropped onto it.
+ * The bottle as a drop target for dragged vials. It glows while a vial is being dragged, and
+ * more strongly when the vial is over it (holding it there keeps pouring).
  */
-export function PourTarget({
-  pickedName,
-  canPour,
-  onPour,
-  children,
-}: {
-  pickedName: string | null;
-  canPour: boolean;
-  onPour: () => void;
-  children: React.ReactNode;
-}) {
+export function BottleDropTarget({ dragging, children }: { dragging: boolean; children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id: BOTTLE_DROP_ID });
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const held = useRef(false);
-  const pour = useRef(onPour);
-  useEffect(() => {
-    pour.current = onPour;
-  }, [onPour]);
-
-  function stop() {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-  }
-
-  function start() {
-    held.current = false;
-    if (!canPour) return;
-    const repeat = () => {
-      held.current = true;
-      pour.current();
-      timer.current = setTimeout(repeat, HOLD_REPEAT_MS);
-    };
-    timer.current = setTimeout(repeat, HOLD_DELAY_MS);
-  }
-
-  useEffect(() => stop, []);
-
   return (
-    <button
+    <div
       ref={setNodeRef}
-      type="button"
-      aria-disabled={!canPour || undefined}
-      aria-label={
-        pickedName ? `Pour ${pickedName} into the bottle (${POUR_STEP_PCT}%)` : "Your blend. Pick an ingredient, then tap here to pour"
-      }
-      onPointerDown={start}
-      onPointerUp={stop}
-      onPointerLeave={stop}
-      onPointerCancel={stop}
-      onContextMenu={(e) => e.preventDefault()}
-      onClick={() => {
-        // A hold already poured; the click that ends it shouldn't pour again.
-        if (!held.current && canPour) onPour();
-        held.current = false;
-      }}
       className={cn(
-        "block w-full touch-manipulation select-none rounded-3xl transition-shadow focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold",
-        canPour ? "cursor-pointer" : "cursor-default",
-        (isOver || (pickedName && canPour)) && "shadow-[0_0_60px_rgba(201,168,76,0.25)]",
+        "rounded-3xl transition-[box-shadow,transform] duration-200",
+        dragging && "shadow-[0_0_40px_rgba(201,168,76,0.25)] ring-1 ring-gold/40",
+        isOver && "scale-105 shadow-[0_0_70px_rgba(201,168,76,0.45)] ring-gold",
       )}
     >
       {children}
-    </button>
+    </div>
   );
 }
 
