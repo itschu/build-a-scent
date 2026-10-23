@@ -168,6 +168,20 @@ async function decide(tx: Tx, id: string, set: Partial<typeof schema.marketplace
 export async function approveListing(actor: Actor, id: string): Promise<void> {
   assertAdmin(actor);
   const listingId = z.uuid().parse(id);
+  const [seller] = await getDb()
+    .select({ bannedAt: schema.users.bannedAt })
+    .from(schema.marketplaceListings)
+    .innerJoin(schema.users, eq(schema.users.id, schema.marketplaceListings.sellerId))
+    .where(eq(schema.marketplaceListings.id, listingId));
+  if (seller?.bannedAt) throw new ValidationError("This seller is blocked. Unblock them before approving their listing.");
+  await publishPendingListing(listingId);
+}
+
+/**
+ * Makes a pending listing live and tells the seller (notification + email). Used by admin
+ * approval and by automatic approval when the listing_auto_approve setting is on.
+ */
+export async function publishPendingListing(listingId: string): Promise<void> {
   const emailId = await getDb().transaction(async (tx) => {
     const d = await decide(tx, listingId, { status: "approved", approvedAt: new Date(), rejectionReason: null });
     const url = `${env().APP_URL}/marketplace/${d.listingId}`;

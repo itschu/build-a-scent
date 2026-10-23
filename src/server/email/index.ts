@@ -3,6 +3,8 @@ import { and, eq, inArray, lte } from "drizzle-orm";
 import { Resend } from "resend";
 import { env } from "@/env";
 import { getDb, schema, type Db, type Tx } from "@/server/db";
+import { getSettings } from "@/server/settings";
+import { SUPPORT_SLOT, supportHtml } from "./layout";
 import { isEmailTemplate, renderEmail, type EmailPayload, type EmailTemplate } from "./templates";
 
 export const MAX_ATTEMPTS = 6;
@@ -95,12 +97,14 @@ export async function deliverEmail(id: string): Promise<"sent" | "failed" | "ski
   try {
     if (!isEmailTemplate(claimed.template)) throw new Error(`Unknown template ${claimed.template}`);
     const rendered = renderEmail(claimed.template, claimed.payload as never);
+    const { support_email, support_phone } = await getSettings();
+    const contact = [support_email, support_phone].filter(Boolean).join(" or ");
     await getTransport().sendMail({
       from: env().EMAIL_FROM ?? "Build a Scent <no-reply@localhost>",
       to: claimed.toEmail,
       subject: rendered.subject,
-      text: rendered.text,
-      html: rendered.html,
+      text: contact ? `${rendered.text}\n\nQuestions? Contact us at ${contact}.` : rendered.text,
+      html: rendered.html.replace(SUPPORT_SLOT, supportHtml(support_email, support_phone)),
     });
     await db
       .update(schema.emailOutbox)

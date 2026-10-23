@@ -1,6 +1,7 @@
 export const ADMIN_SECTIONS = [
   { href: "/admin", label: "Dashboard", key: "dashboard" },
   { href: "/admin/orders", label: "Orders", key: "orders" },
+  { href: "/admin/users", label: "Users", key: "users" },
   { href: "/admin/products", label: "Products", key: "products" },
   { href: "/admin/ingredients", label: "Ingredients", key: "ingredients" },
   { href: "/admin/bottle-options", label: "Bottle Options", key: "bottle-options" },

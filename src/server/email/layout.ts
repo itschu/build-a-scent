@@ -17,6 +17,16 @@ export function paragraph(text: string): string {
   return `<p style="margin:0 0 16px;line-height:1.6">${escapeHtml(text)}</p>`;
 }
 
+/** Replaced with the support contact (Settings → Storefront) when an email is sent. */
+export const SUPPORT_SLOT = "<!--support-contact-->";
+
+export function supportHtml(email: string, phone: string): string {
+  const parts = [email && `<a href="mailto:${escapeHtml(email)}" style="color:#c9a84c">${escapeHtml(email)}</a>`, phone && escapeHtml(phone)].filter(Boolean);
+  return parts.length
+    ? `<p style="margin:24px 0 0;padding-top:16px;border-top:1px solid #2a2a2a;font-size:13px;color:#8a8a8a">Questions? Contact us at ${parts.join(" or ")}.</p>`
+    : "";
+}
+
 export function layout(heading: string, bodyHtml: string): string {
   return `<!doctype html>
 <html><body style="margin:0;background:#0a0a0a;font-family:Georgia,serif;color:#e8d5a3">
@@ -26,5 +36,6 @@ export function layout(heading: string, bodyHtml: string): string {
 <tr><td style="padding:32px">
 <h1 style="margin:0 0 20px;font-weight:normal;font-size:24px;color:#f0e6cc">${escapeHtml(heading)}</h1>
 ${bodyHtml}
+${SUPPORT_SLOT}
 </td></tr></table></td></tr></table></body></html>`;
 }

@@ -17,7 +17,7 @@ export function ListingForm({ draft }: { draft: ListingDraft }) {
   const [values, setValues] = useState<ListingFieldValues>({ description: "", markup: "", featured: [] });
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState<null | "pending_review" | "approved">(null);
   const layers = {
     base: draft.ingredients.filter((i) => i.tier === "base").map((i) => i.colorHex),
     heart: draft.ingredients.filter((i) => i.tier === "heart").map((i) => i.colorHex),
@@ -28,8 +28,17 @@ export function ListingForm({ draft }: { draft: ListingDraft }) {
     return (
       <div className="py-10 text-center">
         <BottleVisual layers={layers} className="mx-auto mb-6 h-48" />
-        <h2 className="mb-3 font-serif text-2xl text-cream">Your scent has been submitted for review.</h2>
-        <p className="mb-8 text-sm text-muted">We&apos;ll notify you once it&apos;s approved.</p>
+        {submitted === "approved" ? (
+          <>
+            <h2 className="mb-3 font-serif text-2xl text-cream">Your scent is live on the marketplace.</h2>
+            <p className="mb-8 text-sm text-muted">Buyers can find it now. You&apos;ll be notified when it sells.</p>
+          </>
+        ) : (
+          <>
+            <h2 className="mb-3 font-serif text-2xl text-cream">Your scent has been submitted for review.</h2>
+            <p className="mb-8 text-sm text-muted">We&apos;ll notify you once it&apos;s approved.</p>
+          </>
+        )}
         <Link href="/account/seller" className={buttonClasses()}>
           Go to seller dashboard
         </Link>
@@ -50,7 +59,7 @@ export function ListingForm({ draft }: { draft: ListingDraft }) {
     });
     setPending(false);
     if (!result.ok) return setError(result.error);
-    setSubmitted(true);
+    setSubmitted(result.data.status);
   }
 
   return (

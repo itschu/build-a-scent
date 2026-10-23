@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { promoteToAdmin, UserNotFoundError } from "../../scripts/admin";
 import { seed } from "../../scripts/seed-data";
+import { SETTING_KEYS } from "@/lib/settings";
 import { freshTestDatabase, testDatabaseUrl } from "../support/db";
 
 type Connection = Awaited<ReturnType<typeof freshTestDatabase>>;
@@ -40,6 +41,7 @@ describe.skipIf(!testDatabaseUrl)("database schema", () => {
     );
     expect(result.rows.map((r) => r.table_name)).toEqual([
       "accounts",
+      "admin_audit_log",
       "bottle_options",
       "email_outbox",
       "ingredients",
@@ -73,7 +75,7 @@ describe.skipIf(!testDatabaseUrl)("database schema", () => {
     await seed(conn.db, { sampleData: true });
 
     const settings = await conn.db.select().from(conn.schema.platformSettings);
-    expect(settings).toHaveLength(10);
+    expect(settings).toHaveLength(SETTING_KEYS.length);
     expect(settings.find((s) => s.key === "commission_pct")?.value).toBe(15);
     expect(settings.find((s) => s.key === "low_stock_reserve_threshold")?.isPublic).toBe(false);
     expect(await conn.db.$count(conn.schema.bottleOptions)).toBe(8);

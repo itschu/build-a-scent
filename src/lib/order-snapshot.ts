@@ -21,6 +21,8 @@ export type CustomScentSnapshot = {
   name: string;
   bottle: SnapshotBottle;
   formula: SnapshotIngredient[];
+  /** canonical formula hash, matched against saved scents for the listing order rule. */
+  formulaHash?: string;
   basePriceKobo: number;
   ingredientCostKobo: number;
 };

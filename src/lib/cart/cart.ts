@@ -1,8 +1,10 @@
 // Client-side cart (Tech Plan, Decision 3). Items carry identifiers plus a last-seen display
 // price; the server recalculates everything at checkout.
 import { canonicalFormula, type Formula } from "@/lib/formula";
+import { MAX_LINE_QUANTITY_LIMIT } from "@/lib/settings";
 
-export const MAX_LINE_QUANTITY = 10;
+/** Hard ceiling; the store's own limit (max_line_quantity setting) is applied on top. */
+export const MAX_LINE_QUANTITY = MAX_LINE_QUANTITY_LIMIT;
 
 type LineBase = {
   key: string;

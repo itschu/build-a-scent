@@ -1,5 +1,6 @@
 "use client";
 
+import { usePublicSettings } from "@/hooks/use-public-settings";
 import { MAX_LINE_QUANTITY, type CartLine } from "@/lib/cart/cart";
 import { useCartStore } from "@/lib/cart/store";
 import { LineThumb } from "./line-thumb";
@@ -18,6 +19,8 @@ function lineDetail(line: CartLine): string {
 
 export function CartLines({ compact = false }: { compact?: boolean }) {
   const { lines, updateQty, removeItem } = useCartStore();
+  // The store's per-item limit; checkout enforces it too.
+  const maxQuantity = Math.min(MAX_LINE_QUANTITY, usePublicSettings()?.max_line_quantity ?? MAX_LINE_QUANTITY);
 
   return (
     <ul className="divide-y divide-line-soft">
@@ -54,7 +57,7 @@ export function CartLines({ compact = false }: { compact?: boolean }) {
                   type="button"
                   className="px-3 py-1 text-muted hover:text-gold disabled:opacity-40"
                   onClick={() => updateQty(line.key, line.quantity + 1)}
-                  disabled={line.quantity >= MAX_LINE_QUANTITY}
+                  disabled={line.quantity >= maxQuantity}
                   aria-label="Increase quantity"
                 >
                   +

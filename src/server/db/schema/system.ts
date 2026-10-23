@@ -86,3 +86,17 @@ export const rateLimits = pgTable(
   },
   (t) => [check("rate_limits_count_check", sql`${t.count} >= 0`)],
 );
+
+/** Every admin action on a user account, for accountability. */
+export const adminAuditLog = pgTable(
+  "admin_audit_log",
+  {
+    id: id(),
+    actorId: uuid().references(() => users.id, { onDelete: "set null" }),
+    targetUserId: uuid().references(() => users.id, { onDelete: "set null" }),
+    action: text().notNull(),
+    details: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [index("admin_audit_log_target_idx").on(t.targetUserId, t.createdAt)],
+);

@@ -1,5 +1,6 @@
 import { cacheLife } from "next/cache";
 import Link from "next/link";
+import { SupportContact } from "./support-contact";
 
 const COLUMNS = [
   {
@@ -28,10 +29,7 @@ const COLUMNS = [
   },
 ];
 
-export async function SiteFooter() {
-  // Cached so the copyright year can be computed without making every page dynamic.
-  "use cache";
-  cacheLife("days");
+export function SiteFooter() {
   return (
     <footer className="border-t border-line bg-coal">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:grid-cols-2 sm:px-8 lg:grid-cols-4">
@@ -52,13 +50,25 @@ export async function SiteFooter() {
                   </Link>
                 </li>
               ))}
+              {col.title === "Help" && <SupportContact />}
             </ul>
           </nav>
         ))}
       </div>
       <div className="border-t border-line-soft py-6 text-center text-xs text-faint">
-        © {new Date().getFullYear()} Build a Scent
+        © <CopyrightYear /> Build a Scent
       </div>
     </footer>
   );
+}
+
+/**
+ * Cached so the year can be computed without making every page dynamic. Only the year is
+ * cached: client components (like the support contact) inside a cached component make the
+ * dev server reload in a loop.
+ */
+async function CopyrightYear() {
+  "use cache";
+  cacheLife("days");
+  return new Date().getFullYear();
 }

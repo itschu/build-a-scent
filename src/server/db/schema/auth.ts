@@ -13,6 +13,11 @@ export const users = pgTable(
     emailVerified: boolean().notNull().default(false),
     image: text(),
     role: text().$type<UserRole>().notNull().default("user"),
+    // Set by an admin: a blocked user can't sign in and their listings are hidden.
+    bannedAt: timestamp({ withTimezone: true }),
+    banReason: text(),
+    // Set when an admin deletes the account: personal data is anonymised, orders are kept.
+    deletedAt: timestamp({ withTimezone: true }),
     ...timestamps,
   },
   (t) => [check("users_role_check", oneOf(t.role, USER_ROLES))],

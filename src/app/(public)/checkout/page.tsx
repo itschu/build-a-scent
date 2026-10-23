@@ -35,5 +35,17 @@ async function Checkout() {
       state: p.state ?? "",
     };
   }
-  return <CheckoutForm zones={zones} prefill={prefill} leadDays={settings.production_lead_days} />;
+  return (
+    <CheckoutForm
+      zones={zones}
+      prefill={prefill}
+      leadDays={settings.production_lead_days}
+      rules={{
+        checkoutEnabled: settings.checkout_enabled,
+        pausedMessage: settings.checkout_paused_message,
+        freeShippingThresholdKobo: settings.free_shipping_threshold_kobo,
+        minOrderKobo: settings.min_order_kobo,
+      }}
+    />
+  );
 }

@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import type { NoteTier, OrderItemType } from "@/lib/domain";
-import { findFormulaIssues, type Formula } from "@/lib/formula";
+import { findFormulaIssues, formulaHash, type Formula } from "@/lib/formula";
 import { bottleLabel, FORMAT_LABELS } from "@/lib/labels";
 import { noteProfile } from "@/lib/note-profile";
 import type { ItemSnapshot, SnapshotBottle, SnapshotIngredient } from "@/lib/order-snapshot";
@@ -88,9 +88,11 @@ export async function revalidateCart(tx: Tx, lines: CheckoutLine[], settings: Se
           formula: schema.savedScents.formula,
           displayName: schema.profiles.displayName,
           fullName: schema.profiles.fullName,
+          sellerBannedAt: schema.users.bannedAt,
         })
         .from(schema.marketplaceListings)
         .innerJoin(schema.savedScents, eq(schema.savedScents.id, schema.marketplaceListings.savedScentId))
+        .innerJoin(schema.users, eq(schema.users.id, schema.marketplaceListings.sellerId))
         .leftJoin(schema.profiles, eq(schema.profiles.userId, schema.marketplaceListings.sellerId))
         .where(inArray(schema.marketplaceListings.id, listingIds))
     : [];
@@ -157,6 +159,7 @@ export async function revalidateCart(tx: Tx, lines: CheckoutLine[], settings: Se
           name: line.name,
           bottle: snapshotBottle(bottle),
           formula: snapshotFormula(line.formula, ingredients, bottle, shares),
+          formulaHash: await formulaHash(line.formula),
           basePriceKobo: bottle.basePriceKobo,
           ingredientCostKobo: ingredientCostKobo(line.formula, ingredients, bottle, shares),
         },
@@ -168,6 +171,7 @@ export async function revalidateCart(tx: Tx, lines: CheckoutLine[], settings: Se
         !found ||
         !bottle?.isActive ||
         found.listing.status !== "approved" ||
+        found.sellerBannedAt !== null ||
         findFormulaIssues(found.formula, ingredients).length > 0
       ) {
         issues.push({ key: line.key, kind: "unavailable", message: `${found?.scentName ?? "A marketplace scent"} is no longer available.` });
@@ -244,5 +248,20 @@ export async function revalidateCart(tx: Tx, lines: CheckoutLine[], settings: Se
     }
   }
 
+  // The per-item quantity limit applies to every line, on top of any stock limit above.
+  const cap = settings.max_line_quantity;
+  for (const line of lines) {
+    if (line.quantity <= cap) continue;
+    const reduced = issues.find((i) => i.key === line.key && i.kind === "quantity_reduced");
+    if (reduced && reduced.kind === "quantity_reduced") reduced.newQuantity = Math.min(reduced.newQuantity, cap);
+    else if (!issues.some((i) => i.key === line.key && i.kind === "unavailable")) {
+      issues.push({
+        key: line.key,
+        kind: "quantity_reduced",
+        message: `You can buy up to ${cap} of each item, so we've updated your quantity.`,
+        newQuantity: cap,
+      });
+    }
+  }
   return { lines: priced, issues };
 }

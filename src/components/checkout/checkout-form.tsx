@@ -8,6 +8,9 @@ import { CurrencyToggle, Price, UsdNote } from "@/components/cart/price";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
+import { formatNaira } from "@/lib/money";
+import { CHECKOUT_PAUSED_DEFAULT, minOrderShortfallKobo, shippingFeeKobo } from "@/lib/order-rules";
+import { revealField } from "@/lib/reveal-field";
 import { applyIssues, subtotalKobo, type CartIssue, type CartLine } from "@/lib/cart/cart";
 import { useCartNotices } from "@/lib/cart/notices-store";
 import { useCartStore } from "@/lib/cart/store";
@@ -38,7 +41,24 @@ function toCheckoutLine(line: CartLine): CheckoutLine {
   }
 }
 
-export function CheckoutForm({ zones, prefill, leadDays }: { zones: Zone[]; prefill: CheckoutPrefill; leadDays: number }) {
+export type CheckoutRules = {
+  checkoutEnabled: boolean;
+  pausedMessage: string;
+  freeShippingThresholdKobo: number;
+  minOrderKobo: number;
+};
+
+export function CheckoutForm({
+  zones,
+  prefill,
+  leadDays,
+  rules,
+}: {
+  zones: Zone[];
+  prefill: CheckoutPrefill;
+  leadDays: number;
+  rules: CheckoutRules;
+}) {
   const router = useRouter();
   const { lines, hydrated, replaceAll } = useCartStore();
   const setNotices = useCartNotices((s) => s.set);
@@ -63,6 +83,13 @@ export function CheckoutForm({ zones, prefill, leadDays }: { zones: Zone[]; pref
   const zone = zones.find((z) => z.states.includes(state)) ?? null;
   const subtotal = subtotalKobo(lines);
   const eta = zone ? deliveryWindow(leadDays, zone) : null;
+  const shipping = zone ? shippingFeeKobo(zone.feeKobo, subtotal, rules.freeShippingThresholdKobo) : 0;
+  const belowMinimum = minOrderShortfallKobo(subtotal, rules.minOrderKobo) > 0;
+  const blocked = !rules.checkoutEnabled
+    ? rules.pausedMessage || CHECKOUT_PAUSED_DEFAULT
+    : belowMinimum
+      ? `The minimum order is ${formatNaira(rules.minOrderKobo)} before shipping.`
+      : null;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -72,6 +99,11 @@ export function CheckoutForm({ zones, prefill, leadDays }: { zones: Zone[]; pref
       const next: Record<string, string> = {};
       for (const issue of parsed.error.issues) next[String(issue.path[0])] ??= issue.message;
       setErrors(next);
+      // The first field with a problem, in form order.
+      const first = Array.from(event.currentTarget.elements).find(
+        (el): el is HTMLElement => el instanceof HTMLElement && el.getAttribute("name") !== null && el.getAttribute("name")! in next,
+      );
+      revealField(first);
       return;
     }
     setErrors({});
@@ -204,19 +236,28 @@ export function CheckoutForm({ zones, prefill, leadDays }: { zones: Zone[]; pref
           </div>
           <div className="flex justify-between">
             <dt className="text-muted">Shipping{zone && ` · ${zone.name}`}</dt>
-            <dd>{zone ? <Price kobo={zone.feeKobo} /> : <span className="text-faint">Choose a state</span>}</dd>
+            <dd>
+              {!zone ? (
+                <span className="text-faint">Choose a state</span>
+              ) : shipping === 0 && zone.feeKobo > 0 ? (
+                <span className="text-gold">Free</span>
+              ) : (
+                <Price kobo={shipping} />
+              )}
+            </dd>
           </div>
           <div className="flex items-baseline justify-between border-t border-line pt-3">
             <dt className="font-serif text-xs uppercase tracking-label text-muted">Total</dt>
-            <dd><Price kobo={subtotal + (zone?.feeKobo ?? 0)} className="font-serif text-2xl text-gold" /></dd>
+            <dd><Price kobo={subtotal + shipping} className="font-serif text-2xl text-gold" /></dd>
           </div>
         </dl>
         {eta && <p className="text-xs text-muted">Estimated delivery: {formatWindow(eta.from, eta.to)}</p>}
         <CurrencyToggle />
         <UsdNote />
+        {blocked && <Notice tone="error">{blocked}</Notice>}
         {formError && <Notice tone="error">{formError}</Notice>}
-        <Button type="submit" size="lg" className="w-full" pending={pending} disabled={!zone}>
-          Pay <Price kobo={subtotal + (zone?.feeKobo ?? 0)} />
+        <Button type="submit" size="lg" className="w-full" pending={pending} disabled={!zone || blocked !== null}>
+          Pay <Price kobo={subtotal + shipping} />
         </Button>
         <p className="text-center text-xs text-faint">Prices are checked again before payment. You&apos;ll be charged in naira.</p>
       </aside>

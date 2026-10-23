@@ -91,7 +91,7 @@ function ListingRow({ listing, commissionPct, minMarkupKobo }: { listing: Seller
     });
     setPending(false);
     if (!result.ok) return setError(result.error);
-    toast("Submitted for review.");
+    toast(result.data.status === "approved" ? "Your listing is live again." : "Submitted for review.");
     setEditing(false);
     router.refresh();
   }

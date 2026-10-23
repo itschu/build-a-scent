@@ -19,6 +19,7 @@ type TemplateMap = {
   };
   verify_email: { name: string; url: string };
   reset_password: { name: string; url: string };
+  set_password: { name: string; url: string };
   test_email: { sentBy: string };
   payment_under_review: { name: string; orderNumber: string; lookupUrl: string };
   order_shipped: { name: string; orderNumber: string; eta: string | null; lookupUrl: string };
@@ -80,6 +81,17 @@ const templates: { [T in EmailTemplate]: (p: TemplateMap[T]) => RenderedEmail } 
         paragraph("Confirm your email address to finish setting up your Build a Scent account.") +
         button("VERIFY EMAIL", url) +
         paragraph("If you didn't create an account, you can ignore this email."),
+    ),
+  }),
+  set_password: ({ name, url }) => ({
+    subject: "Set your Build a Scent password",
+    text: `Hi ${name},\n\nUse this link to set a password for your Build a Scent account (valid for 1 hour):\n${url}\n\nIf it has expired, choose "Forgot password" on the sign-in page and enter this email address.`,
+    html: layout(
+      "Set your password",
+      paragraph(`Hi ${name},`) +
+        paragraph("Use the button below to set a password for your Build a Scent account. The link is valid for 1 hour.") +
+        button("SET PASSWORD", url) +
+        paragraph('If it has expired, choose "Forgot password" on the sign-in page and enter this email address.'),
     ),
   }),
   reset_password: ({ name, url }) => ({

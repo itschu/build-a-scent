@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, count, countDistinct, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { LISTING_DESCRIPTION_MAX, MAX_FEATURED_NOTES, type ListingStatus, type NoteTier } from "@/lib/domain";
 import type { Formula } from "@/lib/formula";
@@ -12,6 +12,7 @@ import { getSettings } from "@/server/settings";
 import { assertSignedIn, AuthorizationError, NotFoundError, ValidationError, type Actor } from "./actor";
 import { getIngredientsByIds, type CatalogIngredient } from "./catalog";
 import { scentAvailability } from "./library";
+import { publishPendingListing } from "./moderation";
 import { publicNameFor } from "./profiles";
 
 export const DUPLICATE_FORMULA_MESSAGE =
@@ -98,13 +99,19 @@ function publicListingQuery() {
     .from(schema.marketplaceListings)
     .innerJoin(schema.savedScents, eq(schema.savedScents.id, schema.marketplaceListings.savedScentId))
     .innerJoin(schema.bottleOptions, eq(schema.bottleOptions.id, schema.marketplaceListings.bottleOptionId))
+    .innerJoin(schema.users, eq(schema.users.id, schema.marketplaceListings.sellerId))
     .leftJoin(schema.profiles, eq(schema.profiles.userId, schema.marketplaceListings.sellerId));
+}
+
+/** A listing buyers can see: approved, from a seller who isn't blocked. */
+function isLive() {
+  return and(eq(schema.marketplaceListings.status, "approved"), isNull(schema.users.bannedAt));
 }
 
 /** Public read: approved listings, newest first. */
 export async function listMarketplace(): Promise<PublicListing[]> {
   const rows = await publicListingQuery()
-    .where(eq(schema.marketplaceListings.status, "approved"))
+    .where(isLive())
     .orderBy(desc(schema.marketplaceListings.approvedAt));
   return toPublicListings(rows, await getSettings());
 }
@@ -116,9 +123,7 @@ export type PublicListingDetail = PublicListing & {
 /** Public read of one approved listing; anything else is "unavailable" (null). */
 export async function getPublicListing(id: string): Promise<PublicListingDetail | null> {
   if (!z.uuid().safeParse(id).success) return null;
-  const rows = await publicListingQuery().where(
-    and(eq(schema.marketplaceListings.id, id), eq(schema.marketplaceListings.status, "approved")),
-  );
+  const rows = await publicListingQuery().where(and(eq(schema.marketplaceListings.id, id), isLive()));
   const [listing] = await toPublicListings(rows, await getSettings());
   if (!listing) return null;
   const [profile] = await getDb()
@@ -165,6 +170,8 @@ export async function getListingDraft(actor: Actor, scentId: string): Promise<Li
     .where(eq(schema.marketplaceListings.savedScentId, scent.id));
   if (existing) throw new ValidationError("This scent already has a listing. Manage it from your seller dashboard.");
   const settings = await getSettings();
+  // Shown before the form, so nobody fills it in only to be turned away.
+  await assertMayList(actor.userId, settings, { formulaHash: scent.formulaHash });
   return {
     scentId: scent.id,
     name: scent.name ?? "Untitled scent",
@@ -216,18 +223,98 @@ async function assertNotDuplicate(sellerId: string, formulaHash: string | null, 
   if (dupe) throw new ValidationError(DUPLICATE_FORMULA_MESSAGE);
 }
 
+/** Distinct delivered orders by this user, optionally only those containing a blend. */
+export async function deliveredOrderCount(userId: string, formulaHash?: string | null): Promise<number> {
+  const db = getDb();
+  const [user] = await db.select({ email: schema.users.email }).from(schema.users).where(eq(schema.users.id, userId));
+  if (!user) return 0;
+  // Orders placed while signed in, plus guest orders placed with the same email address.
+  const mine = or(
+    eq(schema.orders.userId, userId),
+    and(isNull(schema.orders.userId), sql`lower(${schema.orders.email}) = ${user.email.toLowerCase()}`),
+  );
+  const delivered = and(eq(schema.orders.status, "fulfilled"), mine);
+  if (formulaHash === undefined) {
+    const [row] = await db.select({ n: count() }).from(schema.orders).where(delivered);
+    return row.n;
+  }
+  if (!formulaHash) return 0;
+  const [row] = await db
+    .select({ n: countDistinct(schema.orders.id) })
+    .from(schema.orders)
+    .innerJoin(schema.orderItems, eq(schema.orderItems.orderId, schema.orders.id))
+    .where(
+      and(
+        delivered,
+        eq(schema.orderItems.itemType, "custom_scent"),
+        sql`${schema.orderItems.itemSnapshot}->>'formulaHash' = ${formulaHash}`,
+      ),
+    );
+  return row.n;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * The platform's selling rules (admin settings): listings may be paused, sellers may have a
+ * cap on active listings, and may need delivered orders (of this scent, or of anything)
+ * before they can list. `newListing: false` is a resubmission, which skips the orders rule.
+ */
+async function assertMayList(
+  sellerId: string,
+  settings: SettingValues,
+  scent: { formulaHash: string | null },
+  { newListing = true, exceptListingId }: { newListing?: boolean; exceptListingId?: string } = {},
+) {
+  if (!settings.listings_enabled) throw new ValidationError("New marketplace listings are paused right now. Please check back soon.");
+  const max = settings.max_active_listings_per_seller;
+  if (max > 0) {
+    const [row] = await getDb()
+      .select({ n: count() })
+      .from(schema.marketplaceListings)
+      .where(
+        and(
+          eq(schema.marketplaceListings.sellerId, sellerId),
+          inArray(schema.marketplaceListings.status, ["pending_review", "approved"]),
+          exceptListingId ? ne(schema.marketplaceListings.id, exceptListingId) : undefined,
+        ),
+      );
+    if (row.n >= max) {
+      throw new ValidationError(`You can have up to ${plural(max, "active listing")}. Withdraw one to list another.`);
+    }
+  }
+  const need = settings.listing_required_orders;
+  if (!newListing || need === 0) return;
+  const sameScent = settings.listing_order_scope === "same_scent";
+  const have = await deliveredOrderCount(sellerId, sameScent ? scent.formulaHash : undefined);
+  if (have < need) {
+    throw new ValidationError(
+      sameScent
+        ? `To list this scent, you need ${plural(need, "delivered order")} of it first, so you know exactly what buyers will get. You have ${have} so far.`
+        : `You need ${plural(need, "delivered order")} on Build a Scent before you can list scents for sale. You have ${have} so far.`,
+    );
+  }
+}
+
 function assertVerified(actor: Actor & { kind: "user" }) {
   if (!actor.emailVerified) throw new AuthorizationError("Verify your email address before listing scents for sale.");
 }
 
-/** Submits one of the actor's saved scents for review (Flow 5). */
-export async function submitListing(actor: Actor, input: ListingEdit & { scentId: string }): Promise<{ id: string }> {
+/**
+ * Submits one of the actor's saved scents for review (Flow 5), or publishes it straight away
+ * when listings are approved automatically.
+ */
+export async function submitListing(
+  actor: Actor,
+  input: ListingEdit & { scentId: string },
+): Promise<{ id: string; status: "pending_review" | "approved" }> {
   assertSignedIn(actor);
   assertVerified(actor);
   const edit = listingEditSchema.parse(input);
   const { scent } = await loadOwnSavedScent(actor, z.uuid().parse(input.scentId));
   const settings = await getSettings();
   assertEdit(edit, scent.formula, settings);
+  await assertMayList(actor.userId, settings, { formulaHash: scent.formulaHash });
   await assertNotDuplicate(actor.userId, scent.formulaHash);
 
   const [created] = await getDb()
@@ -243,7 +330,9 @@ export async function submitListing(actor: Actor, input: ListingEdit & { scentId
     .onConflictDoNothing()
     .returning({ id: schema.marketplaceListings.id });
   if (!created) throw new ValidationError("This scent already has a listing. Manage it from your seller dashboard.");
-  return created;
+  if (!settings.listing_auto_approve) return { id: created.id, status: "pending_review" };
+  await publishPendingListing(created.id);
+  return { id: created.id, status: "approved" };
 }
 
 async function ownListing(actor: Actor & { kind: "user" }, id: string) {
@@ -260,7 +349,7 @@ async function ownListing(actor: Actor & { kind: "user" }, id: string) {
  * Edit & resubmit a rejected listing, or relist a withdrawn one. Only the description, markup
  * and featured notes can change; the formula is locked (Tech Plan, Decision 12).
  */
-export async function resubmitListing(actor: Actor, id: string, input: ListingEdit): Promise<void> {
+export async function resubmitListing(actor: Actor, id: string, input: ListingEdit): Promise<{ status: "pending_review" | "approved" }> {
   assertSignedIn(actor);
   assertVerified(actor);
   const edit = listingEditSchema.parse(input);
@@ -270,6 +359,7 @@ export async function resubmitListing(actor: Actor, id: string, input: ListingEd
   }
   const settings = await getSettings();
   assertEdit(edit, formula, settings);
+  await assertMayList(actor.userId, settings, { formulaHash }, { newListing: false, exceptListingId: id });
   await assertNotDuplicate(actor.userId, formulaHash, id);
   const ingredients = await getIngredientsByIds(formula.map((e) => e.ingredientId));
   const [bottle] = await getDb().select().from(schema.bottleOptions).where(eq(schema.bottleOptions.id, listing.bottleOptionId));
@@ -282,6 +372,9 @@ export async function resubmitListing(actor: Actor, id: string, input: ListingEd
     .where(and(eq(schema.marketplaceListings.id, id), inArray(schema.marketplaceListings.status, ["rejected", "withdrawn"])))
     .returning({ id: schema.marketplaceListings.id });
   if (updated.length === 0) throw new ValidationError("This listing changed. Refresh and try again.");
+  if (!settings.listing_auto_approve) return { status: "pending_review" };
+  await publishPendingListing(id);
+  return { status: "approved" };
 }
 
 /** Takes a listing off the marketplace / out of the review queue. Returns whether it was live. */

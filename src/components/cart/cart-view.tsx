@@ -7,12 +7,16 @@ import { Notice } from "@/components/ui/notice";
 import { subtotalKobo } from "@/lib/cart/cart";
 import { useCartNotices } from "@/lib/cart/notices-store";
 import { useCartStore } from "@/lib/cart/store";
+import { usePublicSettings } from "@/hooks/use-public-settings";
+import { formatNaira } from "@/lib/money";
+import { CHECKOUT_PAUSED_DEFAULT, freeShippingShortfallKobo, minOrderShortfallKobo } from "@/lib/order-rules";
 import { CartLines } from "./cart-lines";
 import { CurrencyToggle, Price, UsdNote } from "./price";
 
 export function CartView() {
   const { lines, hydrated } = useCartStore();
   const { notices, clear } = useCartNotices();
+  const settings = usePublicSettings();
 
   // Revalidation notices are shown once, then cleared when leaving the page.
   useEffect(() => clear, [clear]);
@@ -53,7 +57,7 @@ export function CartView() {
               <span className="font-serif text-xs uppercase tracking-label text-muted">Subtotal</span>
               <Price kobo={subtotalKobo(lines)} className="font-serif text-2xl text-gold" />
             </div>
-            <p className="text-xs text-faint">Shipping is calculated at checkout from your delivery state.</p>
+            <CartRules subtotal={subtotalKobo(lines)} settings={settings} />
             <CurrencyToggle />
             <UsdNote />
             <Link href="/checkout" className={buttonClasses({ size: "lg", variant: "primary" }) + " w-full"}>
@@ -63,5 +67,31 @@ export function CartView() {
         </div>
       )}
     </>
+  );
+}
+
+/** Store rules that affect this cart: paused checkout, minimum order and free shipping. */
+function CartRules({ subtotal, settings }: { subtotal: number; settings: ReturnType<typeof usePublicSettings> }) {
+  if (!settings) return <p className="text-xs text-faint">Shipping is calculated at checkout from your delivery state.</p>;
+  const toMinimum = minOrderShortfallKobo(subtotal, settings.min_order_kobo);
+  const toFreeShipping = freeShippingShortfallKobo(subtotal, settings.free_shipping_threshold_kobo);
+  return (
+    <div className="space-y-2 text-xs">
+      {!settings.checkout_enabled && (
+        <Notice tone="error">{settings.checkout_paused_message || CHECKOUT_PAUSED_DEFAULT}</Notice>
+      )}
+      {toMinimum > 0 && (
+        <p className="text-danger">
+          Add {formatNaira(toMinimum)} more to reach the {formatNaira(settings.min_order_kobo)} minimum order.
+        </p>
+      )}
+      {settings.free_shipping_threshold_kobo > 0 &&
+        (toFreeShipping > 0 ? (
+          <p className="text-champagne">Add {formatNaira(toFreeShipping)} more for free shipping.</p>
+        ) : (
+          <p className="text-gold">Your order ships free.</p>
+        ))}
+      <p className="text-faint">Shipping is calculated at checkout from your delivery state.</p>
+    </div>
   );
 }

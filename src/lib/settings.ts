@@ -5,8 +5,35 @@ const percent = z.number().min(0).max(100);
 const wholePercent = z.number().int().min(0).max(100);
 const nonNegativeInt = z.number().int().min(0);
 const positiveInt = z.number().int().positive();
+const text = (max: number) => z.string().trim().max(max);
+
+/** What counts toward the orders a seller needs before listing a scent. */
+export const LISTING_ORDER_SCOPES = ["same_scent", "any"] as const;
+export type ListingOrderScope = (typeof LISTING_ORDER_SCOPES)[number];
+
+/** Hard ceiling for the per-item quantity setting (and the cart's own limit). */
+export const MAX_LINE_QUANTITY_LIMIT = 50;
 
 export const SETTINGS = {
+  // Store switches.
+  checkout_enabled: { schema: z.boolean(), default: true, isPublic: true },
+  checkout_paused_message: { schema: text(200), default: "", isPublic: true },
+  listings_enabled: { schema: z.boolean(), default: true, isPublic: true },
+  signups_enabled: { schema: z.boolean(), default: true, isPublic: true },
+  // Selling rules. 0 means "no requirement" / "no limit".
+  listing_auto_approve: { schema: z.boolean(), default: false, isPublic: false },
+  max_active_listings_per_seller: { schema: nonNegativeInt, default: 0, isPublic: true },
+  listing_required_orders: { schema: nonNegativeInt.max(100), default: 0, isPublic: true },
+  listing_order_scope: { schema: z.enum(LISTING_ORDER_SCOPES), default: "same_scent" as ListingOrderScope, isPublic: true },
+  // Order rules. 0 turns the threshold or minimum off.
+  free_shipping_threshold_kobo: { schema: nonNegativeInt, default: 0, isPublic: true },
+  min_order_kobo: { schema: nonNegativeInt, default: 0, isPublic: true },
+  max_line_quantity: { schema: positiveInt.max(MAX_LINE_QUANTITY_LIMIT), default: 10, isPublic: true },
+  // Storefront content. Empty hides it.
+  announcement_text: { schema: text(200), default: "", isPublic: true },
+  support_email: { schema: z.union([z.literal(""), z.email()]), default: "", isPublic: true },
+  support_phone: { schema: text(30), default: "", isPublic: true },
+
   commission_pct: { schema: percent, default: 20, isPublic: true },
   usd_exchange_rate: { schema: z.number().positive(), default: 1600, isPublic: true },
   min_creator_markup_kobo: { schema: nonNegativeInt, default: 100_000, isPublic: true },

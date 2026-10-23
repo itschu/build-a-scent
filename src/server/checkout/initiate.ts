@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { env } from "@/env";
 import { deliveryWindow } from "@/lib/delivery-estimate";
+import { formatNaira } from "@/lib/money";
+import { CHECKOUT_PAUSED_DEFAULT, minOrderShortfallKobo, shippingFeeKobo } from "@/lib/order-rules";
 import { checkoutRequestSchema, type CheckoutRequest } from "@/lib/validation/checkout";
 import { getDb, schema } from "@/server/db";
 import { ValidationError, type Actor } from "@/server/dal/actor";
@@ -24,6 +26,7 @@ export type InitiateResult =
 export async function initiateCheckout(actor: Actor, request: CheckoutRequest): Promise<InitiateResult> {
   const { lines, delivery, gateway } = checkoutRequestSchema.parse(request);
   const settings = await getSettings();
+  if (!settings.checkout_enabled) throw new ValidationError(settings.checkout_paused_message || CHECKOUT_PAUSED_DEFAULT);
   const db = getDb();
 
   const quote = await quoteShipping(delivery.state);
@@ -34,6 +37,10 @@ export async function initiateCheckout(actor: Actor, request: CheckoutRequest): 
     if (issues.length > 0) return { kind: "changed" as const, issues };
 
     const subtotalKobo = priced.reduce((sum, l) => sum + l.unitPriceKobo * l.quantity, 0);
+    if (minOrderShortfallKobo(subtotalKobo, settings.min_order_kobo) > 0) {
+      throw new ValidationError(`The minimum order is ${formatNaira(settings.min_order_kobo)} before shipping.`);
+    }
+    const feeKobo = shippingFeeKobo(quote.feeKobo, subtotalKobo, settings.free_shipping_threshold_kobo);
     const eta = deliveryWindow(settings.production_lead_days, quote);
 
     let order: { id: string; orderNumber: string; paymentReference: string | null } | undefined;
@@ -48,8 +55,8 @@ export async function initiateCheckout(actor: Actor, request: CheckoutRequest): 
           paymentGateway: gateway,
           paymentReference: `${orderNumber}-${randomBytes(3).toString("hex")}`,
           subtotalKobo,
-          shippingFeeKobo: quote.feeKobo,
-          totalKobo: subtotalKobo + quote.feeKobo,
+          shippingFeeKobo: feeKobo,
+          totalKobo: subtotalKobo + feeKobo,
           deliveryAddress: {
             fullName: delivery.fullName,
             phone: delivery.phone,
@@ -93,7 +100,7 @@ export async function initiateCheckout(actor: Actor, request: CheckoutRequest): 
       );
     }
 
-    return { kind: "created" as const, order, totalKobo: subtotalKobo + quote.feeKobo };
+    return { kind: "created" as const, order, totalKobo: subtotalKobo + feeKobo };
   });
 
   if (created.kind === "changed") return created;

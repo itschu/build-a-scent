@@ -41,6 +41,7 @@ import {
   type MixerSnapshot,
 } from "@/lib/mixer/state";
 import { mixColors } from "@/lib/color";
+import { revealField } from "@/lib/reveal-field";
 import { blendPriceKobo } from "@/lib/pricing";
 import { tierSharesFrom } from "@/lib/settings";
 import { scentNameSchema } from "@/lib/validation/scent";
@@ -101,6 +102,7 @@ export function MixerWizard({
   /** The pouring demo overlay, with the elements it points between. */
   const [coach, setCoach] = useState<{ source: Element; target: Element; color: string } | null>(null);
   const bottleRef = useRef<HTMLDivElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   // A stable ID keeps dnd-kit's accessibility IDs the same on the server and the client.
   const dndId = useId();
   const dragPour = useRef<{ timer: ReturnType<typeof setTimeout> | null; poured: boolean }>({ timer: null, poured: false });
@@ -253,6 +255,7 @@ export function MixerWizard({
     const parsed = scentNameSchema.safeParse(name);
     if (parsed.success) return parsed.data;
     setNameError(parsed.error.issues[0].message);
+    revealField(nameInputRef.current);
     return null;
   }
 
@@ -470,8 +473,10 @@ export function MixerWizard({
                   onPourBack={pourBack}
                   onRemove={remove}
                   bottleOptions={catalog.bottleOptions}
+                  listingsEnabled={catalog.settings.listings_enabled}
                   priceKobo={priceKobo}
                   nameError={nameError}
+                  nameInputRef={nameInputRef}
                   busy={busy}
                   onNameChange={(name) => {
                     setNameError(null);

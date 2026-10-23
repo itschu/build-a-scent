@@ -25,8 +25,10 @@ export function MixerPreview({
   onPourBack,
   onRemove,
   bottleOptions,
+  listingsEnabled,
   priceKobo,
   nameError,
+  nameInputRef,
   busy,
   onNameChange,
   onBottleChange,
@@ -45,8 +47,10 @@ export function MixerPreview({
   onPourBack: (tier: NoteTier, ingredientId: string) => void;
   onRemove: (tier: NoteTier, ingredientId: string) => void;
   bottleOptions: CatalogBottleOption[];
+  listingsEnabled: boolean;
   priceKobo: number | null;
   nameError: string | null;
+  nameInputRef: React.Ref<HTMLInputElement>;
   busy: null | "draft" | "save" | "list";
   onNameChange: (name: string) => void;
   onBottleChange: (id: string) => void;
@@ -72,6 +76,7 @@ export function MixerPreview({
         <Field label="Give your scent a name" error={nameError}>
           {({ id, describedBy }) => (
             <Input
+              ref={nameInputRef}
               id={id}
               value={state.name}
               maxLength={SCENT_NAME_MAX}
@@ -142,11 +147,13 @@ export function MixerPreview({
             className="whitespace-nowrap px-4"
             onClick={onList}
             pending={busy === "list"}
-            disabled={busy !== null && busy !== "list"}
+            disabled={!listingsEnabled || (busy !== null && busy !== "list")}
+            title={listingsEnabled ? undefined : "New marketplace listings are paused right now"}
           >
             List for sale
           </Button>
         </div>
+        {!listingsEnabled && <p className="text-xs text-faint">New marketplace listings are paused right now.</p>}
         <Button variant="link" onClick={onBack}>
           ← Back to top notes
         </Button>

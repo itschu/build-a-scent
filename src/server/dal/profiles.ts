@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, exists } from "drizzle-orm";
+import { and, eq, exists, isNull } from "drizzle-orm";
 import { profileUpdateSchema, type ProfileUpdateInput } from "@/lib/validation/profile";
 import { getDb, schema, type Db, type Tx } from "@/server/db";
 import { assertSignedIn, type Actor } from "./actor";
@@ -73,9 +73,12 @@ export async function getPublicProfile(userId: string): Promise<PublicProfile | 
       bio: schema.profiles.bio,
     })
     .from(schema.profiles)
+    .innerJoin(schema.users, eq(schema.users.id, schema.profiles.userId))
     .where(
       and(
         eq(schema.profiles.userId, userId),
+        // Blocked sellers have no public profile.
+        isNull(schema.users.bannedAt),
         exists(
           db
             .select({ id: schema.marketplaceListings.id })
